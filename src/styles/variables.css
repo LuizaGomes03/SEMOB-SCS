@@ -1,0 +1,86 @@
+:root {
+  /* Identidade Visual SEMOB-SCS e Prefeitura de São Caetano do Sul */
+  --color-primary-navy: #0B192C;
+  --color-primary-dark: #07111F;
+  --color-primary-blue: #005691;
+  --color-blue-hover: #004373;
+  --color-blue-light: #EBF3FA;
+  --color-blue-accent: #0284C7;
+  --color-sky-soft: #E0F2FE;
+
+  /* Superfícies e Fundos */
+  --bg-app: #F3F5F9;
+  --bg-surface: #FFFFFF;
+  --bg-surface-subtle: #F8FAFC;
+  --bg-sidebar: #0B192C;
+  --bg-sidebar-hover: #15273E;
+  --bg-sidebar-active: #005691;
+
+  /* Tipografia e Textos */
+  --text-primary: #0F172A;
+  --text-secondary: #475569;
+  --text-muted: #64748B;
+  --text-light: #94A3B8;
+  --text-inverse: #FFFFFF;
+  --text-sidebar: #CBD5E1;
+  --text-sidebar-active: #FFFFFF;
+
+  /* Bordas e Divisores */
+  --border-subtle: #E2E8F0;
+  --border-default: #CBD5E1;
+  --border-focus: #005691;
+  --border-sidebar: #1E314B;
+
+  /* Status Semânticos */
+  --status-success: #059669;
+  --status-success-bg: #ECFDF5;
+  --status-success-border: #A7F3D0;
+  --status-success-text: #065F46;
+
+  --status-warning: #D97706;
+  --status-warning-bg: #FFFBEB;
+  --status-warning-border: #FDE68A;
+  --status-warning-text: #92400E;
+
+  --status-danger: #DC2626;
+  --status-danger-bg: #FEF2F2;
+  --status-danger-border: #FECACA;
+  --status-danger-text: #991B1B;
+
+  --status-info: #2563EB;
+  --status-info-bg: #EFF6FF;
+  --status-info-border: #BFDBFE;
+  --status-info-text: #1E40AF;
+
+  /* Sombras */
+  --shadow-xs: 0 1px 2px 0 rgba(15, 23, 42, 0.04);
+  --shadow-sm: 0 1px 3px 0 rgba(15, 23, 42, 0.07), 0 1px 2px -1px rgba(15, 23, 42, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(15, 23, 42, 0.07), 0 2px 4px -2px rgba(15, 23, 42, 0.05);
+  --shadow-lg: 0 10px 15px -3px rgba(15, 23, 42, 0.08), 0 4px 6px -4px rgba(15, 23, 42, 0.04);
+  --shadow-drawer: -6px 0 24px rgba(11, 25, 44, 0.15);
+  --shadow-modal: 0 20px 25px -5px rgba(15, 23, 42, 0.15), 0 8px 10px -6px rgba(15, 23, 42, 0.1);
+
+  /* Dimensões e Raios */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
+  --radius-full: 9999px;
+
+  --sidebar-width: 270px;
+  --sidebar-width-collapsed: 78px;
+  --header-height: 68px;
+  --topbar-height: 34px;
+
+  /* Transições */
+  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-normal: 250ms cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Fontes e Escalas */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-heading: 'Outfit', 'Inter', -apple-system, sans-serif;
+
+  /* Escala de Acessibilidade Base (100% = 16px) */
+  --base-font-size: 16px;
+}

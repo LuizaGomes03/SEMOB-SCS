@@ -7,24 +7,53 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-
-import 'package:semob_scs/main.dart';
+import 'package:semob_scs/app/app.dart';
+import 'package:semob_scs/core/constants/app_colors.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  testWidgets('SemobApp smoke test on default viewport', (WidgetTester tester) async {
+    await tester.pumpWidget(const SemobApp());
+    expect(find.byType(SemobApp), findsOneWidget);
+  });
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+  testWidgets('SemobApp renders cleanly on Desktop resolution (1440x900)', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1440, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() => tester.view.resetPhysicalSize());
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+    await tester.pumpWidget(const SemobApp());
+    await tester.pumpAndSettle();
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    expect(find.byType(SemobApp), findsOneWidget);
+  });
+
+  testWidgets('SemobApp renders cleanly on Tablet resolution (820x1180)', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(820, 1180);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() => tester.view.resetPhysicalSize());
+
+    await tester.pumpWidget(const SemobApp());
+    await tester.pumpAndSettle();
+
+    expect(find.byType(SemobApp), findsOneWidget);
+  });
+
+  testWidgets('SemobApp renders cleanly on Mobile resolution (390x844)', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() => tester.view.resetPhysicalSize());
+
+    await tester.pumpWidget(const SemobApp());
+    await tester.pumpAndSettle();
+
+    expect(find.byType(SemobApp), findsOneWidget);
+  });
+
+  test('AppColors institutional palette conforms to specifications', () {
+    expect(AppColors.primary, const Color(0xFF3D5D9A));
+    expect(AppColors.textPrimary, const Color(0xFF183B70));
+    expect(AppColors.background, const Color(0xFFF5F7FA));
+    expect(AppColors.card, const Color(0xFFFFFFFF));
+    expect(AppColors.textSecondary, const Color(0xFF667085));
   });
 }

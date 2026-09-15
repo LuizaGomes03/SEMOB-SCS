@@ -4,6 +4,8 @@
 *.pyc
 *.swp
 .DS_Store
+node_modules/
+dist/
 .atom/
 .build/
 .buildlog/

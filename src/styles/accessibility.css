@@ -1,0 +1,147 @@
+/* ===================================================
+   ACESSIBILIDADE: CONTRASTE, ESCALAS DE FONTE E FOCO
+   Conformidade WCAG 2.1 / Padrão e-MAG Brasil
+   =================================================== */
+
+/* Skip Link para leitores de tela e navegação por teclado */
+.skip-link {
+  position: absolute;
+  top: -100px;
+  left: 1rem;
+  background: var(--color-primary-navy);
+  color: #FFFFFF;
+  padding: 0.75rem 1.25rem;
+  z-index: 9999;
+  border-radius: var(--radius-sm);
+  font-weight: 700;
+  text-decoration: none;
+  transition: top var(--transition-fast);
+  box-shadow: var(--shadow-lg);
+  outline: 3px solid var(--color-blue-accent);
+}
+
+.skip-link:focus {
+  top: 1rem;
+}
+
+/* Escalas de Fonte no elemento Root */
+html[data-font-scale="small"] {
+  font-size: 14px;
+}
+
+html[data-font-scale="normal"] {
+  font-size: 16px;
+}
+
+html[data-font-scale="large"] {
+  font-size: 18px;
+}
+
+html[data-font-scale="xlarge"] {
+  font-size: 20px;
+}
+
+/* ===================================================
+   MODO DE ALTO CONTRASTE (WCAG AAA)
+   =================================================== */
+html.high-contrast {
+  --color-primary-navy: #000000;
+  --color-primary-dark: #000000;
+  --color-primary-blue: #FFFF00;
+  --color-blue-hover: #E6E600;
+  --color-blue-light: #1A1A1A;
+  --color-blue-accent: #FFFF00;
+  --color-sky-soft: #222222;
+
+  --bg-app: #000000;
+  --bg-surface: #0A0A0A;
+  --bg-surface-subtle: #121212;
+  --bg-sidebar: #000000;
+  --bg-sidebar-hover: #222222;
+  --bg-sidebar-active: #FFFF00;
+
+  --text-primary: #FFFFFF;
+  --text-secondary: #F0F0F0;
+  --text-muted: #D0D0D0;
+  --text-light: #B0B0B0;
+  --text-inverse: #000000;
+  --text-sidebar: #FFFFFF;
+  --text-sidebar-active: #000000;
+
+  --border-subtle: #666666;
+  --border-default: #FFFFFF;
+  --border-focus: #FFFF00;
+  --border-sidebar: #FFFFFF;
+
+  --status-success: #00FF66;
+  --status-success-bg: #05260F;
+  --status-success-border: #00FF66;
+  --status-success-text: #00FF66;
+
+  --status-warning: #FFFF00;
+  --status-warning-bg: #2B2A00;
+  --status-warning-border: #FFFF00;
+  --status-warning-text: #FFFF00;
+
+  --status-danger: #FF4D4D;
+  --status-danger-bg: #330A0A;
+  --status-danger-border: #FF4D4D;
+  --status-danger-text: #FF6B6B;
+
+  --status-info: #66B2FF;
+  --status-info-bg: #0A1C33;
+  --status-info-border: #66B2FF;
+  --status-info-text: #80BFFF;
+}
+
+html.high-contrast body {
+  background-color: #000000 !important;
+  color: #FFFFFF !important;
+}
+
+html.high-contrast a {
+  color: #FFFF00 !important;
+  text-decoration: underline !important;
+}
+
+html.high-contrast button {
+  border: 2px solid #FFFFFF !important;
+}
+
+html.high-contrast .kpi-card,
+html.high-contrast .chart-card,
+html.high-contrast .data-table-container,
+html.high-contrast .alert-card,
+html.high-contrast .app-header,
+html.high-contrast .app-sidebar {
+  border: 2px solid #FFFFFF !important;
+  box-shadow: none !important;
+}
+
+/* ===================================================
+   MODO DE FOCO REFORÇADO (Para navegação por teclado)
+   =================================================== */
+html.enhanced-focus *:focus-visible {
+  outline: 3px solid #005691 !important;
+  outline-offset: 3px !important;
+  box-shadow: 0 0 0 5px rgba(0, 86, 145, 0.35) !important;
+}
+
+html.high-contrast.enhanced-focus *:focus-visible {
+  outline: 4px solid #FFFF00 !important;
+  outline-offset: 3px !important;
+  box-shadow: 0 0 0 6px #000000 !important;
+}
+
+/* Utilitário para leitores de tela */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
