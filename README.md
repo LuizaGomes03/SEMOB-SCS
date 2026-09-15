@@ -71,9 +71,20 @@ O mesmo código Flutter é utilizado nas diferentes plataformas, com layouts ada
 
 ---
 
-### 5. Como Executar o Projeto
+### 5. Estrutura do Repositório
+
+```
+SEMOB-SCS/
+├── frontend/   # Aplicação Flutter (dashboard institucional)
+└── backend/    # API (estrutura inicial, em desenvolvimento)
+```
+
+### 6. Como Executar o Projeto
 
 ```bash
+# Entrar na pasta do front-end
+cd frontend
+
 # Obter as dependências do Flutter
 flutter pub get
 
@@ -82,3 +93,4 @@ flutter run -d chrome
 
 # Executar no Windows Desktop
 flutter run -d windows
+```
