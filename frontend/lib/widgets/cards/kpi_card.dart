@@ -24,35 +24,81 @@ class KpiCardWidget extends StatelessWidget {
     this.onTap,
   });
 
+  Color _statusColor() {
+    switch (data.status) {
+      case KpiStatus.normal:
+        return AppColors.successText;
+      case KpiStatus.atencao:
+        return AppColors.warning;
+      case KpiStatus.critico:
+        return AppColors.danger;
+    }
+  }
+
+  Color _statusBackground() {
+    switch (data.status) {
+      case KpiStatus.normal:
+        return AppColors.successBg;
+      case KpiStatus.atencao:
+        return AppColors.warningBg;
+      case KpiStatus.critico:
+        return AppColors.dangerBg;
+    }
+  }
+
+  String _statusLabel() {
+    switch (data.status) {
+      case KpiStatus.normal:
+        return 'NORMAL';
+      case KpiStatus.atencao:
+        return 'ATENÇÃO';
+      case KpiStatus.critico:
+        return 'CRÍTICO';
+    }
+  }
+
+  IconData _statusIcon() {
+    switch (data.status) {
+      case KpiStatus.normal:
+        return Icons.check_circle_outline;
+      case KpiStatus.atencao:
+        return Icons.warning_amber_rounded;
+      case KpiStatus.critico:
+        return Icons.error_outline;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (isLoading) {
       return Card(
         child: Padding(
-          padding: const EdgeInsets.all(16.0),
+          padding: const EdgeInsets.all(20),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: const [
-              SkeletonLoader(height: 16, width: 100),
-              SizedBox(height: 12),
-              SkeletonLoader(height: 28, width: 140),
-              SizedBox(height: 12),
-              SkeletonLoader(height: 14, width: 120),
+              SkeletonLoader(height: 18, width: 140),
+              SizedBox(height: 24),
+              SkeletonLoader(height: 42, width: 180),
+              SizedBox(height: 18),
+              SkeletonLoader(height: 18, width: 120),
             ],
           ),
         ),
       );
     }
 
+    final statusColor = _statusColor();
+    final statusBackground = _statusBackground();
+
     final isPositive = data.change > 0;
     final isNegative = data.change < 0;
+
     final trendColor = isPositive
         ? AppColors.successText
-        : (isNegative ? AppColors.dangerText : AppColors.textSecondary);
-    final trendBg = isPositive
-        ? AppColors.successBg
-        : (isNegative ? AppColors.dangerBg : AppColors.borderSubtle);
+        : (isNegative
+            ? AppColors.dangerText
+            : AppColors.textSecondary);
 
     final formattedValue = data.unit == 'R\$'
         ? Formatters.currency(data.value)
@@ -60,59 +106,52 @@ class KpiCardWidget extends StatelessWidget {
 
     return Card(
       clipBehavior: Clip.antiAlias,
+      elevation: 1,
       child: InkWell(
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.all(16.0),
+          padding: const EdgeInsets.all(22),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              // Header do Card: Título, Tooltip e Ícone
+              // TÍTULO + ÍCONE
               Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Expanded(
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Flexible(
-                          child: Text(
-                            title,
-                            style: const TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.textSecondary,
-                              letterSpacing: 0.2,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        Tooltip(
-                          message: data.tooltip,
-                          child: const Icon(
-                            Icons.help_outline,
-                            size: 14,
-                            color: AppColors.textMuted,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
                   Container(
-                    padding: const EdgeInsets.all(8),
+                    padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
                       color: iconBg,
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(10),
                     ),
-                    child: Icon(icon, size: 20, color: iconColor),
+                    child: Icon(
+                      icon,
+                      size: 24,
+                      color: iconColor,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textPrimary,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const Icon(
+                    Icons.arrow_forward_ios,
+                    size: 15,
+                    color: AppColors.textMuted,
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
 
-              // Valor Principal e Unidade
+              const SizedBox(height: 22),
+
+              // VALOR PRINCIPAL
               FittedBox(
                 fit: BoxFit.scaleDown,
                 alignment: Alignment.centerLeft,
@@ -123,56 +162,81 @@ class KpiCardWidget extends StatelessWidget {
                     Text(
                       formattedValue,
                       style: const TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
+                        fontSize: 34,
+                        fontWeight: FontWeight.w800,
                         color: AppColors.textPrimary,
                       ),
                     ),
                     if (data.unit.isNotEmpty && data.unit != 'R\$') ...[
-                      const SizedBox(width: 4),
+                      const SizedBox(width: 7),
                       Text(
                         data.unit,
                         style: const TextStyle(
-                          fontSize: 12,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
                           color: AppColors.textSecondary,
-                          fontWeight: FontWeight.w500,
                         ),
                       ),
                     ],
                   ],
                 ),
               ),
-              const SizedBox(height: 10),
 
-              // Rodapé: Variação e Comparação
+              const SizedBox(height: 16),
+
+              // STATUS
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 7,
+                ),
+                decoration: BoxDecoration(
+                  color: statusBackground,
+                  borderRadius: BorderRadius.circular(7),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      _statusIcon(),
+                      size: 17,
+                      color: statusColor,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      _statusLabel(),
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        color: statusColor,
+                        letterSpacing: 0.4,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 14),
+
+              // VARIAÇÃO
               Row(
                 children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: trendBg,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          isPositive
-                              ? Icons.arrow_outward
-                              : (isNegative ? Icons.arrow_downward : Icons.remove),
-                          size: 12,
-                          color: trendColor,
-                        ),
-                        const SizedBox(width: 2),
-                        Text(
-                          Formatters.percentage(data.change),
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold,
-                            color: trendColor,
-                          ),
-                        ),
-                      ],
+                  Icon(
+                    isPositive
+                        ? Icons.arrow_upward
+                        : (isNegative
+                            ? Icons.arrow_downward
+                            : Icons.remove),
+                    size: 15,
+                    color: trendColor,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    Formatters.percentage(data.change),
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: trendColor,
                     ),
                   ),
                   const SizedBox(width: 6),

@@ -1,14 +1,16 @@
+
 import 'package:flutter/material.dart';
+
 import '../../core/constants/app_colors.dart';
 
 class ConfiguracoesScreen extends StatefulWidget {
   final double textScale;
   final bool isHighContrast;
   final bool isEnhancedFocus;
-  final Function(double) onTextScaleChange;
+  final ValueChanged<double> onTextScaleChange;
   final VoidCallback onToggleHighContrast;
   final VoidCallback onToggleEnhancedFocus;
-  final VoidCallback onLogout;
+  final VoidCallback onClose;
 
   const ConfiguracoesScreen({
     super.key,
@@ -18,7 +20,7 @@ class ConfiguracoesScreen extends StatefulWidget {
     required this.onTextScaleChange,
     required this.onToggleHighContrast,
     required this.onToggleEnhancedFocus,
-    required this.onLogout,
+    required this.onClose,
   });
 
   @override
@@ -26,234 +28,254 @@ class ConfiguracoesScreen extends StatefulWidget {
 }
 
 class _ConfiguracoesScreenState extends State<ConfiguracoesScreen> {
-  String _defaultPeriod = 'hoje';
-  bool _soundAlerts = true;
-  String _tableDensity = 'normal';
+  bool _excludeWeekends = true;
+  bool _onlyAnomalies = false;
+  bool _autoRefresh = false;
+  String _selectedLine = 'Todas as linhas';
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // Card de Perfil do Gestor
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(20.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Perfil do Gestor Municipal',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
-                  ),
-                  const SizedBox(height: 2),
-                  const Text(
-                    'Identificação funcional e permissões de acesso ao sistema',
-                    style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
-                  ),
-                  const Divider(height: 24),
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final padding = constraints.maxWidth < 600 ? 16.0 : 30.0;
 
-                  Row(
-                    children: [
-                      CircleAvatar(
-                        radius: 32,
-                        backgroundColor: AppColors.primary,
-                        child: const Text(
-                          'LG',
-                          style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: const [
-                            Text(
-                              'Dra. Luiza Gomes',
-                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
-                            ),
-                            SizedBox(height: 2),
-                            Text(
-                              'Coordenadora de Monitoramento e Planejamento Operacional',
-                              style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
-                            ),
-                            SizedBox(height: 2),
-                            Text(
-                              'SEMOB-SCS / Diretoria de Transportes Públicos',
-                              style: TextStyle(fontSize: 11, color: AppColors.primary, fontWeight: FontWeight.w600),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 20),
-
-                  _buildProfileField('E-mail Funcional', 'luiza.gomes@semob.saocaetanodosul.sp.gov.br'),
-                  const SizedBox(height: 10),
-                  _buildProfileField('Nível de Privilégio', 'Gestor Geral (Acesso Total)'),
-                  const SizedBox(height: 20),
-
-                  ElevatedButton.icon(
-                    onPressed: widget.onLogout,
-                    icon: const Icon(Icons.logout, size: 16),
-                    label: const Text('Encerrar Sessão (Sair da Conta)'),
-                    style: ElevatedButton.styleFrom(backgroundColor: AppColors.danger),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          // Preferências do Sistema
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(20.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Preferências da Operação',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
-                  ),
-                  const SizedBox(height: 2),
-                  const Text(
-                    'Configuração de visualização e alertas do painel',
-                    style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
-                  ),
-                  const Divider(height: 24),
-
-                  DropdownButtonFormField<String>(
-                    value: _defaultPeriod,
-                    decoration: const InputDecoration(
-                      labelText: 'Período Padrão ao Iniciar o Dashboard',
-                      border: OutlineInputBorder(),
+          return SingleChildScrollView(
+            padding: EdgeInsets.fromLTRB(padding, 28, padding, 40),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    IconButton(
+                      onPressed: widget.onClose,
+                      tooltip: 'Voltar',
+                      icon: const Icon(Icons.arrow_back_rounded),
                     ),
-                    items: const [
-                      DropdownMenuItem(value: 'hoje', child: Text('Hoje (Em tempo real)')),
-                      DropdownMenuItem(value: 'semana', child: Text('Esta Semana (Últimos 7 dias)')),
-                      DropdownMenuItem(value: 'mes', child: Text('Mês Atual')),
-                    ],
-                    onChanged: (val) => setState(() => _defaultPeriod = val!),
-                  ),
-                  const SizedBox(height: 16),
-
-                  DropdownButtonFormField<String>(
-                    value: _tableDensity,
-                    decoration: const InputDecoration(
-                      labelText: 'Densidade Visual das Tabelas',
-                      border: OutlineInputBorder(),
-                    ),
-                    items: const [
-                      DropdownMenuItem(value: 'compact', child: Text('Compacta (mais linhas na tela)')),
-                      DropdownMenuItem(value: 'normal', child: Text('Normal / Confortável (recomendado)')),
-                      DropdownMenuItem(value: 'spacious', child: Text('Espaçosa (máxima legibilidade)')),
-                    ],
-                    onChanged: (val) => setState(() => _tableDensity = val!),
-                  ),
-                  const SizedBox(height: 16),
-
-                  SwitchListTile(
-                    title: const Text('Avisos Sonoros para Alertas Críticos', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-                    subtitle: const Text('Emitir alerta sonoro ao receber anomalia severa de tráfego', style: TextStyle(fontSize: 11)),
-                    value: _soundAlerts,
-                    activeColor: AppColors.primary,
-                    onChanged: (v) => setState(() => _soundAlerts = v),
-                    contentPadding: EdgeInsets.zero,
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          // Configurações de Acessibilidade
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(20.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Acessibilidade e Inclusão Digital',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
-                  ),
-                  const SizedBox(height: 2),
-                  const Text(
-                    'Parâmetros em conformidade com as diretrizes e-MAG / WCAG 2.1',
-                    style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
-                  ),
-                  const Divider(height: 24),
-
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Column(
+                    const SizedBox(width: 6),
+                    const Expanded(
+                      child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('Escala da Fonte', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-                          Text('Fator atual: ${(widget.textScale * 100).toInt()}%', style: const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
-                        ],
-                      ),
-                      Row(
-                        children: [
-                          IconButton.outlined(
-                            icon: const Text('A-', style: TextStyle(fontWeight: FontWeight.bold)),
-                            onPressed: () => widget.onTextScaleChange((widget.textScale - 0.1).clamp(0.8, 1.4)),
+                          Text(
+                            'Configurações',
+                            style: TextStyle(
+                              fontSize: 28,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.textPrimary,
+                            ),
                           ),
-                          const SizedBox(width: 4),
-                          IconButton.outlined(
-                            icon: const Text('A', style: TextStyle(fontWeight: FontWeight.bold)),
-                            onPressed: () => widget.onTextScaleChange(1.0),
-                          ),
-                          const SizedBox(width: 4),
-                          IconButton.outlined(
-                            icon: const Text('A+', style: TextStyle(fontWeight: FontWeight.bold)),
-                            onPressed: () => widget.onTextScaleChange((widget.textScale + 0.1).clamp(0.8, 1.4)),
+                          SizedBox(height: 5),
+                          Text(
+                            'Personalize filtros, atualização e acessibilidade do sistema.',
+                            style: TextStyle(
+                              color: AppColors.textSecondary,
+                              fontSize: 14,
+                            ),
                           ),
                         ],
                       ),
-                    ],
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 26),
+                _section(
+                  title: 'Filtros da operação',
+                  icon: Icons.tune_rounded,
+                  children: [
+                    DropdownButtonFormField<String>(
+                      initialValue: _selectedLine,
+                      decoration: const InputDecoration(
+                        labelText: 'Linha',
+                        prefixIcon: Icon(Icons.directions_bus_outlined),
+                        border: OutlineInputBorder(),
+                      ),
+                      items: const [
+                        DropdownMenuItem(
+                          value: 'Todas as linhas',
+                          child: Text('Todas as linhas'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'Linha 01',
+                          child: Text('Linha 01'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'Linha 02',
+                          child: Text('Linha 02'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'Linha 03',
+                          child: Text('Linha 03'),
+                        ),
+                      ],
+                      onChanged: (value) {
+                        if (value != null) {
+                          setState(() => _selectedLine = value);
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    SwitchListTile.adaptive(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Excluir finais de semana'),
+                      subtitle: const Text(
+                        'Considerar somente dias úteis nos indicadores.',
+                      ),
+                      value: _excludeWeekends,
+                      onChanged: (value) {
+                        setState(() => _excludeWeekends = value);
+                      },
+                    ),
+                    SwitchListTile.adaptive(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Mostrar somente anomalias'),
+                      subtitle: const Text(
+                        'Destacar registros que exigem investigação.',
+                      ),
+                      value: _onlyAnomalies,
+                      onChanged: (value) {
+                        setState(() => _onlyAnomalies = value);
+                      },
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 18),
+                _section(
+                  title: 'Atualização',
+                  icon: Icons.sync_rounded,
+                  children: [
+                    SwitchListTile.adaptive(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Atualização automática'),
+                      subtitle: const Text(
+                        'Atualizar os indicadores automaticamente.',
+                      ),
+                      value: _autoRefresh,
+                      onChanged: (value) {
+                        setState(() => _autoRefresh = value);
+                      },
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 18),
+                _section(
+                  title: 'Acessibilidade',
+                  icon: Icons.accessibility_new_rounded,
+                  children: [
+                    const Text(
+                      'Tamanho do texto',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    Row(
+                      children: [
+                        const Text('A'),
+                        Expanded(
+                          child: Slider(
+                            value: widget.textScale,
+                            min: 0.9,
+                            max: 1.3,
+                            divisions: 4,
+                            label:
+                                '${(widget.textScale * 100).round()}%',
+                            onChanged: widget.onTextScaleChange,
+                          ),
+                        ),
+                        const Text(
+                          'A',
+                          style: TextStyle(fontSize: 20),
+                        ),
+                      ],
+                    ),
+                    SwitchListTile.adaptive(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Alto contraste'),
+                      value: widget.isHighContrast,
+                      onChanged: (_) =>
+                          widget.onToggleHighContrast(),
+                    ),
+                    SwitchListTile.adaptive(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Foco visual aprimorado'),
+                      value: widget.isEnhancedFocus,
+                      onChanged: (_) =>
+                          widget.onToggleEnhancedFocus(),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 22),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: FilledButton.icon(
+                    onPressed: widget.onClose,
+                    icon: const Icon(Icons.check_rounded),
+                    label: const Text('Salvar e voltar'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 14,
+                      ),
+                    ),
                   ),
-                  const SizedBox(height: 12),
-
-                  SwitchListTile(
-                    title: const Text('Modo Alto Contraste', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-                    subtitle: const Text('Inversão com contraste máximo (preto e amarelo)', style: TextStyle(fontSize: 11)),
-                    value: widget.isHighContrast,
-                    activeColor: AppColors.primary,
-                    onChanged: (_) => widget.onToggleHighContrast(),
-                    contentPadding: EdgeInsets.zero,
-                  ),
-
-                  SwitchListTile(
-                    title: const Text('Foco Visível Reforçado', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-                    subtitle: const Text('Bordas destacadas para navegação assistida por teclado', style: TextStyle(fontSize: 11)),
-                    value: widget.isEnhancedFocus,
-                    activeColor: AppColors.primary,
-                    onChanged: (_) => widget.onToggleEnhancedFocus(),
-                    contentPadding: EdgeInsets.zero,
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
-          ),
-        ],
+          );
+        },
       ),
     );
   }
 
-  Widget _buildProfileField(String label, String value) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: const TextStyle(fontSize: 10, color: AppColors.textMuted, fontWeight: FontWeight.w600)),
-        const SizedBox(height: 2),
-        Text(value, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
-      ],
+  Widget _section({
+    required String title,
+    required IconData icon,
+    required List<Widget> children,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE1E6EF)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x08000000),
+            blurRadius: 12,
+            offset: Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(11),
+                ),
+                child: Icon(icon, color: AppColors.primary),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          ...children,
+        ],
+      ),
     );
   }
 }

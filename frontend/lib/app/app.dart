@@ -1,27 +1,15 @@
+
 import 'dart:ui';
+
 import 'package:flutter/material.dart';
+
 import '../core/constants/app_colors.dart';
-import '../core/responsive/breakpoints.dart';
 import '../mock/mock_transporte_data.dart';
-import '../models/operacao_item.dart';
-import '../models/anomalia_item.dart';
-import '../models/notificacao_item.dart';
-import 'theme/app_theme.dart';
-
-import '../widgets/sidebar/app_sidebar.dart';
-import '../widgets/header/app_header.dart';
-import '../widgets/dialogs/notification_dialog.dart';
-import '../widgets/dialogs/accessibility_dialog.dart';
-
-import '../screens/login/login_screen.dart';
 import '../screens/dashboard/dashboard_screen.dart';
-import '../screens/operacao/operacao_screen.dart';
-import '../screens/passageiros/passageiros_screen.dart';
-import '../screens/financeiro/financeiro_screen.dart';
-import '../screens/anomalias/anomalias_screen.dart';
-import '../screens/relatorios/relatorios_screen.dart';
 import '../screens/detalhes/detalhes_screen.dart';
 import '../screens/configuracoes/configuracoes_screen.dart';
+import '../screens/relatorio/relatorio_screen.dart';
+import 'theme/app_theme.dart';
 
 class SemobApp extends StatefulWidget {
   const SemobApp({super.key});
@@ -31,108 +19,157 @@ class SemobApp extends StatefulWidget {
 }
 
 class _SemobAppState extends State<SemobApp> {
-  // Estado de Autenticação
-  bool _isAuthenticated = true; // Inicia true para agilizar navegação, permite logout completo
-
-  // Navegação
-  int _currentScreenIndex = 0;
-  int _previousScreenIndex = 0;
-  OperacaoItem? _selectedDetailItem;
-  AnomaliaItem? _selectedAlertItem;
-
-  // Filtros Globais
   String _selectedPeriod = 'hoje';
+  DateTimeRange? _customRange;
+  DateTime _lastDataDate = DateTime.now().subtract(const Duration(days: 1));
   bool _isRefreshing = false;
-  bool _isSidebarCollapsed = false;
 
-  // Acessibilidade Digital
+  InvestigationType? _selectedInvestigationType;
+
   double _textScale = 1.0;
   bool _isHighContrast = false;
   bool _isEnhancedFocus = false;
 
-  // Notificações
-  late List<NotificacaoItem> _notifications;
 
-  @override
-  void initState() {
-    super.initState();
-    _notifications = List.from(MockTransporteData.notificacoes);
-  }
 
-  void _navigateTo(int index) {
-    if (_currentScreenIndex != index) {
-      setState(() {
-        _previousScreenIndex = _currentScreenIndex;
-        _currentScreenIndex = index;
-      });
-    }
-  }
-
-  void _openDetail(OperacaoItem item) {
-    setState(() {
-      _selectedDetailItem = item;
-      _previousScreenIndex = _currentScreenIndex;
-      _currentScreenIndex = 7; // Tela de detalhes
-    });
-  }
-
-  void _handleRefresh() async {
-    setState(() => _isRefreshing = true);
-    await Future.delayed(const Duration(milliseconds: 700));
-    if (mounted) {
-      setState(() => _isRefreshing = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Dados sincronizados com a telemetria Smart Data com sucesso.'),
-          backgroundColor: AppColors.success,
-          duration: Duration(seconds: 3),
+  void _openReport(BuildContext navigatorContext) {
+    Navigator.of(navigatorContext).push(
+      MaterialPageRoute(
+        builder: (_) => RelatorioScreen(
+          selectedPeriod: _selectedPeriod,
+          periodLabel: _periodLabel(),
+          dataReferenceLabel: 'Dados de referência: ${_formatDate(_lastDataDate)}',
         ),
-      );
-    }
-  }
-
-  void _openNotificationsDialog() {
-    showDialog(
-      context: context,
-      builder: (ctx) => NotificationDialog(
-        notifications: _notifications,
-        onNavigate: (dest) => _navigateTo(dest),
-        onMarkAllAsRead: () {
-          setState(() {
-            for (var n in _notifications) {
-              n.read = true;
-            }
-          });
-          Navigator.of(ctx).pop();
-        },
-        onClearAll: () {
-          setState(() => _notifications.clear());
-          Navigator.of(ctx).pop();
-        },
       ),
     );
   }
 
-  void _openAccessibilityDialog() {
-    showDialog(
-      context: context,
-      builder: (ctx) => AccessibilityDialog(
-        textScale: _textScale,
-        isHighContrast: _isHighContrast,
-        isEnhancedFocus: _isEnhancedFocus,
-        onTextScaleChange: (val) => setState(() => _textScale = val),
-        onToggleHighContrast: () => setState(() => _isHighContrast = !_isHighContrast),
-        onToggleEnhancedFocus: () => setState(() => _isEnhancedFocus = !_isEnhancedFocus),
+  void _openInvestigation(InvestigationType type) {
+    setState(() {
+      _selectedInvestigationType = type;
+    });
+  }
+
+  void _backToDashboard() {
+    setState(() {
+      _selectedInvestigationType = null;
+    });
+  }
+
+  Future<void> _handleRefresh() async {
+    if (_isRefreshing) return;
+
+    setState(() => _isRefreshing = true);
+
+    await Future<void>.delayed(const Duration(milliseconds: 700));
+
+    if (!mounted) return;
+
+    setState(() {
+      _isRefreshing = false;
+      _lastDataDate = DateTime.now().subtract(const Duration(days: 1));
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Dados atualizados com sucesso.'),
+        duration: Duration(seconds: 2),
+      ),
+    );
+  }
+
+  Future<void> _selectCustomPeriod(BuildContext dialogContext) async {
+    final now = DateTime.now();
+
+    final initialRange = _customRange ??
+        DateTimeRange(
+          start: DateTime(now.year, now.month, now.day - 6),
+          end: DateTime(now.year, now.month, now.day),
+        );
+
+    final range = await showDateRangePicker(
+      context: dialogContext,
+      firstDate: DateTime(2024),
+      lastDate: DateTime(now.year + 2),
+      initialDateRange: initialRange,
+      helpText: 'Selecione o período da operação',
+      saveText: 'Aplicar',
+      cancelText: 'Cancelar',
+      confirmText: 'Aplicar',
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: Theme.of(context).colorScheme.copyWith(
+              primary: const Color(0xFF3D5D9A),
+              surface: Colors.white,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (range == null) return;
+
+    setState(() {
+      _customRange = range;
+      _selectedPeriod = 'personalizado';
+      _selectedInvestigationType = null;
+    });
+  }
+
+  String _periodLabel() {
+    switch (_selectedPeriod) {
+      case 'semana':
+        return 'Semana';
+      case 'mes':
+      case 'mês':
+        return 'Mês';
+      case 'personalizado':
+        if (_customRange == null) return 'Personalizado';
+        return '${_formatDate(_customRange!.start)} – ${_formatDate(_customRange!.end)}';
+      default:
+        return 'Hoje';
+    }
+  }
+
+  String _formatDate(DateTime date) {
+    return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}';
+  }
+
+  void _openSettings() {
+    setState(() {
+      _selectedInvestigationType = null;
+    });
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ConfiguracoesScreen(
+          textScale: _textScale,
+          isHighContrast: _isHighContrast,
+          isEnhancedFocus: _isEnhancedFocus,
+          onTextScaleChange: (value) {
+            setState(() => _textScale = value);
+          },
+          onToggleHighContrast: () {
+            setState(() => _isHighContrast = !_isHighContrast);
+          },
+          onToggleEnhancedFocus: () {
+            setState(() => _isEnhancedFocus = !_isEnhancedFocus);
+          },
+          onClose: () => Navigator.of(context).pop(),
+        ),
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = _isHighContrast ? AppTheme.highContrastTheme : AppTheme.lightTheme;
+    final theme =
+        _isHighContrast ? AppTheme.highContrastTheme : AppTheme.lightTheme;
 
     return MaterialApp(
-      title: 'Dashboard de Operação — SEMOB-SCS',
+      title: 'SEMOB-SCS',
       debugShowCheckedModeBanner: false,
       theme: theme,
       scrollBehavior: const AppScrollBehavior(),
@@ -144,142 +181,371 @@ class _SemobAppState extends State<SemobApp> {
           child: child!,
         );
       },
-      home: _isAuthenticated ? _buildAppScaffold() : LoginScreen(
-        onLoginSuccess: () => setState(() {
-          _isAuthenticated = true;
-          _currentScreenIndex = 0;
-        }),
-      ),
+      home: _buildShell(),
     );
   }
 
-  Widget _buildAppScaffold() {
-    final GlobalKey<ScaffoldState> scaffoldKey = GlobalKey<ScaffoldState>();
+  Widget _buildShell() {
+    final isInvestigation = _selectedInvestigationType != null;
 
-    return Builder(
-      builder: (context) {
-        final isMobile = Breakpoints.isMobile(context);
-
-        // Metadados da tela atual
-        final screenTitles = [
-          {'title': 'Dashboard de Operação', 'sub': 'Visão consolidada da operação de transporte público municipal'},
-          {'title': 'Operação de Transporte', 'sub': 'Análise detalhada de quilometragem e viagens por linha municipal'},
-          {'title': 'Passageiros e Demanda', 'sub': 'Acompanhamento de passageiros pagantes e gratuidades'},
-          {'title': 'Informações Financeiras', 'sub': 'Apuração tarifária consolidada (dados demonstrativos)'},
-          {'title': 'Anomalias e Alertas', 'sub': 'Auditoria de desvios operacionais e inconsistências na telemetria'},
-          {'title': 'Relatórios da Operação', 'sub': 'Consolidação periódica e exportação para gestores'},
-          {'title': 'Perfil e Configurações', 'sub': 'Identificação do gestor e preferências do sistema'},
-          {'title': 'Detalhamento da Operação', 'sub': 'Análise aprofundada da escala e distribuição de passageiros'},
-        ];
-
-        final currentMeta = screenTitles[_currentScreenIndex.clamp(0, screenTitles.length - 1)];
-        final unreadCount = _notifications.where((n) => !n.read).length;
-
-        // Conteúdo da tela ativa
-        Widget activeBody;
-        switch (_currentScreenIndex) {
-          case 1:
-            activeBody = OperacaoScreen(onSelectDetail: _openDetail);
-            break;
-          case 2:
-            activeBody = PassageirosScreen(selectedPeriod: _selectedPeriod);
-            break;
-          case 3:
-            activeBody = FinanceiroScreen(selectedPeriod: _selectedPeriod);
-            break;
-          case 4:
-            activeBody = AnomaliasScreen(initialSelectedAlert: _selectedAlertItem);
-            break;
-          case 5:
-            activeBody = const RelatoriosScreen();
-            break;
-          case 6:
-            activeBody = ConfiguracoesScreen(
-              textScale: _textScale,
-              isHighContrast: _isHighContrast,
-              isEnhancedFocus: _isEnhancedFocus,
-              onTextScaleChange: (v) => setState(() => _textScale = v),
-              onToggleHighContrast: () => setState(() => _isHighContrast = !_isHighContrast),
-              onToggleEnhancedFocus: () => setState(() => _isEnhancedFocus = !_isEnhancedFocus),
-              onLogout: () => setState(() => _isAuthenticated = false),
-            );
-            break;
-          case 7:
-            activeBody = DetalhesScreen(
-              item: _selectedDetailItem,
-              onBack: () => _navigateTo(_previousScreenIndex),
-            );
-            break;
-          default:
-            activeBody = DashboardScreen(
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      body: SafeArea(
+        child: Column(
+          children: [
+            _InstitutionalHeader(
+              showHomeControls: !isInvestigation,
               selectedPeriod: _selectedPeriod,
+
+              customPeriodLabel: _periodLabel(),
+              dataReferenceLabel: 'Dados de referência: ${_formatDate(_lastDataDate)}',
               isRefreshing: _isRefreshing,
-              onNavigate: (dest) => _navigateTo(dest),
-              onSelectAlert: (alert) {
-                setState(() => _selectedAlertItem = alert);
-                _navigateTo(4);
+              onPeriodSelected: (period) {
+                if (period == 'personalizado') {
+                  return;
+                }
+
+                setState(() {
+                  _selectedPeriod = period;
+                  _customRange = null;
+                  _selectedInvestigationType = null;
+                });
               },
-            );
-        }
-
-        return Scaffold(
-          key: scaffoldKey,
-          backgroundColor: AppColors.background,
-          // Drawer no Mobile
-          drawer: isMobile
-              ? Drawer(
-                  child: AppSidebar(
-                    selectedIndex: _currentScreenIndex,
-                    onItemSelected: _navigateTo,
-                    onLogout: () => setState(() => _isAuthenticated = false),
-                    isDrawer: true,
-                  ),
-                )
-              : null,
-          body: SafeArea(
-            child: Row(
-              children: [
-                // Sidebar Fixa/Recolhível no Desktop/Tablet
-                if (!isMobile)
-                  AppSidebar(
-                    selectedIndex: _currentScreenIndex,
-                    onItemSelected: _navigateTo,
-                    isCollapsed: _isSidebarCollapsed,
-                    onToggleCollapse: () => setState(() => _isSidebarCollapsed = !_isSidebarCollapsed),
-                    onLogout: () => setState(() => _isAuthenticated = false),
-                  ),
-
-                // Área de Conteúdo Principal
-                Expanded(
-                  child: Column(
-                    children: [
-                      AppHeader(
-                        title: currentMeta['title']!,
-                        subtitle: currentMeta['sub']!,
-                        selectedPeriod: _selectedPeriod,
-                        onPeriodSelected: (p) => setState(() => _selectedPeriod = p),
-                        onRefresh: _handleRefresh,
-                        isRefreshing: _isRefreshing,
-                        onOpenNotifications: _openNotificationsDialog,
-                        unreadNotifications: unreadCount,
-                        onOpenAccessibility: _openAccessibilityDialog,
-                        onOpenProfile: () => _navigateTo(6),
-                        onOpenDrawer: () => scaffoldKey.currentState?.openDrawer(),
-                      ),
-                      Expanded(child: activeBody),
-                    ],
-                  ),
-                ),
-              ],
+              onRefresh: _handleRefresh,
+              onOpenCustomPeriod: (dialogContext) =>
+                  _selectCustomPeriod(dialogContext),
+              onOpenSettings: _openSettings,
+              onOpenReport: () => _openReport(context),
             ),
-          ),
-        );
-      },
+            Expanded(
+              child: isInvestigation
+                  ? DetalhesScreen(
+                      item: null,
+                      type: _selectedInvestigationType,
+                      onBack: _backToDashboard,
+                    )
+                  : DashboardScreen(
+                      selectedPeriod: _selectedPeriod,
+                      isRefreshing: _isRefreshing,
+                      onOpenInvestigation: _openInvestigation,
+                      onSelectAlert: (_) {},
+                    ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
 
-/// Comportamento de rolagem aprimorado para Web, Desktop e Mobile (Touch + Mouse drag)
+class _InstitutionalHeader extends StatelessWidget {
+  final bool showHomeControls;
+  final String selectedPeriod;
+  final String customPeriodLabel;
+  final String dataReferenceLabel;
+  final bool isRefreshing;
+  final ValueChanged<String> onPeriodSelected;
+  final VoidCallback onRefresh;
+  final ValueChanged<BuildContext> onOpenCustomPeriod;
+  final VoidCallback onOpenSettings;
+  final VoidCallback onOpenReport;
+
+  const _InstitutionalHeader({
+    required this.showHomeControls,
+    required this.selectedPeriod,
+    required this.customPeriodLabel,
+    required this.dataReferenceLabel,
+    required this.isRefreshing,
+    required this.onPeriodSelected,
+    required this.onRefresh,
+    required this.onOpenCustomPeriod,
+    required this.onOpenSettings,
+    required this.onOpenReport,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      constraints: const BoxConstraints(minHeight: 82),
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+      decoration: const BoxDecoration(
+        color: Color(0xFF3D5D9A),
+        boxShadow: [
+          BoxShadow(
+            color: Color(0x22000000),
+            blurRadius: 8,
+            offset: Offset(0, 3),
+          ),
+        ],
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final compact = constraints.maxWidth < 900;
+
+          if (compact) {
+            return _buildCompactHeader(context);
+          }
+
+          return Row(
+            children: [
+              _buildLogo(),
+              const SizedBox(width: 24),
+              Container(
+                width: 1,
+                height: 52,
+                color: Colors.white.withValues(alpha: 0.28),
+              ),
+              const Spacer(),
+              if (showHomeControls)
+                _buildControls(context)
+              else
+                IconButton(
+                  tooltip: 'Configurações',
+                  onPressed: onOpenSettings,
+                  icon: const Icon(
+                    Icons.settings_outlined,
+                    color: Colors.white,
+                    size: 25,
+                  ),
+                ),
+              const SizedBox(width: 8),
+              _profileCircle(),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildLogo() {
+    return SizedBox(
+      width: 230,
+      height: 54,
+      child: Image.asset(
+        'assets/images/logo_semob_scs.png',
+        fit: BoxFit.contain,
+        alignment: Alignment.centerLeft,
+        errorBuilder: (_, __, ___) {
+          return const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.account_balance, color: Colors.white, size: 34),
+              SizedBox(width: 10),
+              Text(
+                'SEMOB-SCS',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 18,
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildControls(BuildContext context) {
+    return Wrap(
+      spacing: 10,
+      runSpacing: 8,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      alignment: WrapAlignment.end,
+      children: [
+        Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            _periodSelector(context),
+            const SizedBox(height: 3),
+            Text(
+              dataReferenceLabel,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 10,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+        OutlinedButton.icon(
+          onPressed: onRefresh,
+          icon: isRefreshing
+              ? const SizedBox(
+                  width: 17,
+                  height: 17,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              : const Icon(Icons.refresh_rounded, size: 18),
+          label: const Text('Atualizar'),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: Colors.white,
+            side: BorderSide(
+              color: Colors.white.withValues(alpha: 0.75),
+            ),
+            minimumSize: const Size(126, 42),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+        ),
+        OutlinedButton.icon(
+          onPressed: onOpenReport,
+          icon: const Icon(Icons.description_outlined, size: 18),
+          label: const Text('Relatório'),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: Colors.white,
+            side: BorderSide(
+              color: Colors.white.withValues(alpha: 0.75),
+            ),
+            minimumSize: const Size(122, 42),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+        ),
+        IconButton(
+          tooltip: 'Configurações',
+          onPressed: onOpenSettings,
+          icon: const Icon(
+            Icons.settings_outlined,
+            color: Colors.white,
+            size: 25,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _profileCircle() {
+    return Container(
+      width: 38,
+      height: 38,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.16),
+        shape: BoxShape.circle,
+      ),
+      child: const Text(
+        'LG',
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: 12,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCompactHeader(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(child: _buildLogo()),
+            if (showHomeControls)
+              IconButton(
+                tooltip: 'Gerar relatório',
+                onPressed: onOpenReport,
+                icon: const Icon(
+                  Icons.description_outlined,
+                  color: Colors.white,
+                ),
+              ),
+            if (!showHomeControls)
+              IconButton(
+                tooltip: 'Configurações',
+                onPressed: onOpenSettings,
+                icon: const Icon(
+                  Icons.settings_outlined,
+                  color: Colors.white,
+                ),
+              ),
+            const SizedBox(width: 4),
+            _profileCircle(),
+          ],
+        ),
+        if (showHomeControls) ...[
+          const SizedBox(height: 10),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: _buildControls(context),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _periodSelector(BuildContext context) {
+    final options = const [
+      ('hoje', 'Hoje'),
+      ('semana', 'Semana'),
+      ('mes', 'Mês'),
+      ('personalizado', 'Personalizado'),
+    ];
+
+    return Container(
+      height: 42,
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.13),
+        borderRadius: BorderRadius.circular(11),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.25),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: options.map((option) {
+          final selected = selectedPeriod == option.$1;
+
+          return InkWell(
+            borderRadius: BorderRadius.circular(8),
+            onTap: () {
+              if (option.$1 == 'personalizado') {
+                onOpenCustomPeriod(context);
+              } else {
+                onPeriodSelected(option.$1);
+              }
+            },
+            child: Container(
+              constraints: const BoxConstraints(minWidth: 70),
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: selected ? Colors.white : Colors.transparent,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                selected && option.$1 == 'personalizado'
+                    ? customPeriodLabel
+                    : option.$2,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: selected
+                      ? const Color(0xFF3D5D9A)
+                      : Colors.white,
+                  fontSize: 13,
+                  fontWeight: selected
+                      ? FontWeight.w800
+                      : FontWeight.w600,
+                ),
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+}
+
 class AppScrollBehavior extends MaterialScrollBehavior {
   const AppScrollBehavior();
 
