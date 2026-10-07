@@ -1,6 +1,6 @@
-import Operacao from "../models/Operacao";
 import ResumoGeral from "../models/ResumoGeral";
 import Passageiros from "../models/Passageiros";
+import ResumoLinha from "../models/ResumoLinha";
 
 interface Periodo {
   dataInicio: Date;
@@ -122,6 +122,14 @@ interface ListarPorLinhaParams extends Periodo {
   limite: number;
 }
 
+// Nomes aceitos em ?ordenarPor= e o campo correspondente no banco.
+const camposOrdenacao = new Map([
+  ["data", "data"],
+  ["linha", "linha"],
+  ["quilometragem", "kmTotal"],
+  ["viagens", "nrViagens"],
+]);
+
 export async function listarPorLinha({
   dataInicio,
   dataFim,
@@ -134,19 +142,33 @@ export async function listarPorLinha({
   const filtro: Record<string, unknown> = { data: { $gte: dataInicio, $lte: dataFim } };
 
   if (busca) {
-    filtro.$or = [
-      { "linha.codigo": { $regex: busca, $options: "i" } },
-      { "linha.nome": { $regex: busca, $options: "i" } },
-    ];
+    const texto = busca.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    filtro.linha = { $regex: texto, $options: "i" };
   }
 
-  const sort: Record<string, 1 | -1> = { [ordenarPor || "data"]: ordem === "asc" ? 1 : -1 };
-  const skip = (pagina - 1) * limite;
+  const campo = camposOrdenacao.get(ordenarPor || "data") || "data";
+  const sort: Record<string, 1 | -1> = { [campo]: ordem === "asc" ? 1 : -1 };
+  if (campo !== "data") sort.data = -1;
+  if (campo !== "linha") sort.linha = 1;
 
-  const [itens, total] = await Promise.all([
-    Operacao.find(filtro).sort(sort).skip(skip).limit(limite),
-    Operacao.countDocuments(filtro),
+  const paginaAtual = Math.max(1, Math.floor(pagina) || 1);
+  const porPagina = Math.min(100, Math.max(1, Math.floor(limite) || 20));
+
+  const [registros, total] = await Promise.all([
+    ResumoLinha.find(filtro)
+      .sort(sort)
+      .skip((paginaAtual - 1) * porPagina)
+      .limit(porPagina)
+      .lean(),
+    ResumoLinha.countDocuments(filtro),
   ]);
 
-  return { itens, total, pagina, limite };
+  const itens = registros.map((r) => ({
+    data: r.data,
+    linha: r.linha,
+    quilometragem: r.kmTotal,
+    viagens: r.nrViagens,
+  }));
+
+  return { itens, total, pagina: paginaAtual, limite: porPagina };
 }
