@@ -1,17 +1,21 @@
 import ResumoGeral from "../models/ResumoGeral";
 import Passageiros from "../models/Passageiros";
 import ResumoLinha from "../models/ResumoLinha";
+import VendaUtilizacao from "../models/VendaUtilizacao";
 
 interface Periodo {
   dataInicio: Date;
   dataFim: Date;
 }
 
+// Arredonda para 2 casas: somar valores em reais em ponto flutuante acumula erro.
+const arredondarReais = (valor: number) => Math.round(valor * 100) / 100;
+
 export async function getIndicadores({ dataInicio, dataFim }: Periodo) {
   const periodo = { data: { $gte: dataInicio, $lte: dataFim } };
 
-  // As duas consultas são independentes, então rodam ao mesmo tempo.
-  const [[operacao], [passageiros]] = await Promise.all([
+  // As três consultas são independentes, então rodam ao mesmo tempo.
+  const [[operacao], [passageiros], [financeiro]] = await Promise.all([
     ResumoGeral.aggregate([
       { $match: periodo },
       {
@@ -35,6 +39,17 @@ export async function getIndicadores({ dataInicio, dataFim }: Periodo) {
         },
       },
     ]),
+    VendaUtilizacao.aggregate([
+      { $match: periodo },
+      {
+        $group: {
+          _id: null,
+          vendas: { $sum: "$totalVendas" },
+          utilizacao: { $sum: "$totalUtilizacao" },
+          dias: { $sum: 1 },
+        },
+      },
+    ]),
   ]);
 
   return {
@@ -43,8 +58,11 @@ export async function getIndicadores({ dataInicio, dataFim }: Periodo) {
     viagensProgramadas: operacao?.viagensProgramadas ?? 0,
     passageirosPagantes: passageiros?.pagantes ?? 0,
     passageirosNaoPagantes: passageiros?.naoPagantes ?? 0,
+    creditosVendidos: arredondarReais(financeiro?.vendas ?? 0),
+    creditosUtilizados: arredondarReais(financeiro?.utilizacao ?? 0),
     diasOperacao: operacao?.dias ?? 0,
     diasPassageiros: passageiros?.dias ?? 0,
+    diasFinanceiro: financeiro?.dias ?? 0,
   };
 }
 
@@ -63,9 +81,10 @@ export async function getRelatorioPorPeriodo({
 
   const formato = formatoPorAgrupamento[agrupamento] || formatoPorAgrupamento.diario;
   const periodo = { data: { $gte: dataInicio, $lte: dataFim } };
+  // A mesma chave nas três consultas: é ela que permite juntar os resultados depois.
   const chave = { $dateToString: { format: formato, date: "$data" } };
 
-  const [operacao, passageiros] = await Promise.all([
+  const [operacao, passageiros, financeiro] = await Promise.all([
     ResumoGeral.aggregate([
       { $match: periodo },
       {
@@ -92,12 +111,25 @@ export async function getRelatorioPorPeriodo({
         },
       },
     ]),
+    VendaUtilizacao.aggregate([
+      { $match: periodo },
+      {
+        $group: {
+          _id: chave,
+          vendas: { $sum: "$totalVendas" },
+          utilizacao: { $sum: "$totalUtilizacao" },
+          dias: { $sum: 1 },
+        },
+      },
+    ]),
   ]);
 
   const passageirosPorChave = new Map(passageiros.map((p) => [p._id, p]));
+  const financeiroPorChave = new Map(financeiro.map((f) => [f._id, f]));
 
   return operacao.map((o) => {
     const p = passageirosPorChave.get(o._id);
+    const f = financeiroPorChave.get(o._id);
 
     return {
       periodo: o._id,
@@ -108,8 +140,11 @@ export async function getRelatorioPorPeriodo({
       viagensProgramadas: o.viagensProgramadas,
       passageirosPagantes: p ? p.pagantes : null,
       passageirosNaoPagantes: p ? p.naoPagantes : null,
+      creditosVendidos: f ? arredondarReais(f.vendas) : null,
+      creditosUtilizados: f ? arredondarReais(f.utilizacao) : null,
       diasOperacao: o.dias,
       diasPassageiros: p ? p.dias : 0,
+      diasFinanceiro: f ? f.dias : 0,
     };
   });
 }
@@ -122,7 +157,6 @@ interface ListarPorLinhaParams extends Periodo {
   limite: number;
 }
 
-// Nomes aceitos em ?ordenarPor= e o campo correspondente no banco.
 const camposOrdenacao = new Map([
   ["data", "data"],
   ["linha", "linha"],
