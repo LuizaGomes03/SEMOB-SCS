@@ -1,4 +1,4 @@
-import Operacao from "../models/Operacao.ts";
+import Operacao from "../models/Operacao";
 
 interface Periodo {
   dataInicio: Date;
