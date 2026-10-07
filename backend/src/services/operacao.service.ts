@@ -1,5 +1,6 @@
 import Operacao from "../models/Operacao";
 import ResumoGeral from "../models/ResumoGeral";
+import Passageiros from "../models/Passageiros";
 
 interface Periodo {
   dataInicio: Date;
@@ -7,27 +8,44 @@ interface Periodo {
 }
 
 export async function getIndicadores({ dataInicio, dataFim }: Periodo) {
-  const [resultado] = await ResumoGeral.aggregate([
-    { $match: { data: { $gte: dataInicio, $lte: dataFim } } },
-    {
-      $group: {
-        _id: null,
-        quilometragem: { $sum: "$kmTotal" },
-        viagens: { $sum: "$nrViagensRealiz" },
-        viagensProgramadas: { $sum: "$nrViagensProgr" },
+  const periodo = { data: { $gte: dataInicio, $lte: dataFim } };
+
+  // As duas consultas são independentes, então rodam ao mesmo tempo.
+  const [[operacao], [passageiros]] = await Promise.all([
+    ResumoGeral.aggregate([
+      { $match: periodo },
+      {
+        $group: {
+          _id: null,
+          quilometragem: { $sum: "$kmTotal" },
+          viagens: { $sum: "$nrViagensRealiz" },
+          viagensProgramadas: { $sum: "$nrViagensProgr" },
+          dias: { $sum: 1 },
+        },
       },
-    },
-    {
-      $project: {
-        _id: 0,
-        quilometragem: { $round: ["$quilometragem", 1] },
-        viagens: 1,
-        viagensProgramadas: 1,
+    ]),
+    Passageiros.aggregate([
+      { $match: periodo },
+      {
+        $group: {
+          _id: null,
+          pagantes: { $sum: { $add: ["$catraca", "$antecipados"] } },
+          naoPagantes: { $sum: "$naoPagantes" },
+          dias: { $sum: 1 },
+        },
       },
-    },
+    ]),
   ]);
 
-  return resultado || { quilometragem: 0, viagens: 0, viagensProgramadas: 0 };
+  return {
+    quilometragem: Math.round((operacao?.quilometragem ?? 0) * 10) / 10,
+    viagens: operacao?.viagens ?? 0,
+    viagensProgramadas: operacao?.viagensProgramadas ?? 0,
+    passageirosPagantes: passageiros?.pagantes ?? 0,
+    passageirosNaoPagantes: passageiros?.naoPagantes ?? 0,
+    diasOperacao: operacao?.dias ?? 0,
+    diasPassageiros: passageiros?.dias ?? 0,
+  };
 }
 
 type Agrupamento = "diario" | "semanal" | "mensal";
