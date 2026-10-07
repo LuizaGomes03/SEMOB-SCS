@@ -1,4 +1,5 @@
 import Operacao from "../models/Operacao";
+import ResumoGeral from "../models/ResumoGeral";
 
 interface Periodo {
   dataInicio: Date;
@@ -6,29 +7,27 @@ interface Periodo {
 }
 
 export async function getIndicadores({ dataInicio, dataFim }: Periodo) {
-  const [resultado] = await Operacao.aggregate([
+  const [resultado] = await ResumoGeral.aggregate([
     { $match: { data: { $gte: dataInicio, $lte: dataFim } } },
     {
       $group: {
         _id: null,
-        quilometragem: { $sum: "$quilometragem" },
-        viagens: { $sum: "$viagens" },
-        passageirosPagantes: { $sum: "$passageiros.pagantes" },
-        passageirosNaoPagantes: { $sum: "$passageiros.naoPagantes" },
-        receitaTarifaria: { $sum: "$financeiro.receitaTarifaria" },
+        quilometragem: { $sum: "$kmTotal" },
+        viagens: { $sum: "$nrViagensRealiz" },
+        viagensProgramadas: { $sum: "$nrViagensProgr" },
+      },
+    },
+    {
+      $project: {
+        _id: 0,
+        quilometragem: { $round: ["$quilometragem", 1] },
+        viagens: 1,
+        viagensProgramadas: 1,
       },
     },
   ]);
 
-  return (
-    resultado || {
-      quilometragem: 0,
-      viagens: 0,
-      passageirosPagantes: 0,
-      passageirosNaoPagantes: 0,
-      receitaTarifaria: 0,
-    }
-  );
+  return resultado || { quilometragem: 0, viagens: 0, viagensProgramadas: 0 };
 }
 
 type Agrupamento = "diario" | "semanal" | "mensal";
