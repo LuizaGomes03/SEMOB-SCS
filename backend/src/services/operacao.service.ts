@@ -62,21 +62,56 @@ export async function getRelatorioPorPeriodo({
   };
 
   const formato = formatoPorAgrupamento[agrupamento] || formatoPorAgrupamento.diario;
+  const periodo = { data: { $gte: dataInicio, $lte: dataFim } };
+  const chave = { $dateToString: { format: formato, date: "$data" } };
 
-  return Operacao.aggregate([
-    { $match: { data: { $gte: dataInicio, $lte: dataFim } } },
-    {
-      $group: {
-        _id: { $dateToString: { format: formato, date: "$data" } },
-        quilometragem: { $sum: "$quilometragem" },
-        viagens: { $sum: "$viagens" },
-        passageirosPagantes: { $sum: "$passageiros.pagantes" },
-        passageirosNaoPagantes: { $sum: "$passageiros.naoPagantes" },
-        receitaTarifaria: { $sum: "$financeiro.receitaTarifaria" },
+  const [operacao, passageiros] = await Promise.all([
+    ResumoGeral.aggregate([
+      { $match: periodo },
+      {
+        $group: {
+          _id: chave,
+          inicio: { $min: "$data" },
+          fim: { $max: "$data" },
+          quilometragem: { $sum: "$kmTotal" },
+          viagens: { $sum: "$nrViagensRealiz" },
+          viagensProgramadas: { $sum: "$nrViagensProgr" },
+          dias: { $sum: 1 },
+        },
       },
-    },
-    { $sort: { _id: 1 } },
+      { $sort: { _id: 1 } },
+    ]),
+    Passageiros.aggregate([
+      { $match: periodo },
+      {
+        $group: {
+          _id: chave,
+          pagantes: { $sum: { $add: ["$catraca", "$antecipados"] } },
+          naoPagantes: { $sum: "$naoPagantes" },
+          dias: { $sum: 1 },
+        },
+      },
+    ]),
   ]);
+
+  const passageirosPorChave = new Map(passageiros.map((p) => [p._id, p]));
+
+  return operacao.map((o) => {
+    const p = passageirosPorChave.get(o._id);
+
+    return {
+      periodo: o._id,
+      inicio: o.inicio,
+      fim: o.fim,
+      quilometragem: Math.round(o.quilometragem * 10) / 10,
+      viagens: o.viagens,
+      viagensProgramadas: o.viagensProgramadas,
+      passageirosPagantes: p ? p.pagantes : null,
+      passageirosNaoPagantes: p ? p.naoPagantes : null,
+      diasOperacao: o.dias,
+      diasPassageiros: p ? p.dias : 0,
+    };
+  });
 }
 
 interface ListarPorLinhaParams extends Periodo {
