@@ -2,6 +2,7 @@ import ResumoGeral from "../models/ResumoGeral";
 import Passageiros from "../models/Passageiros";
 import ResumoLinha from "../models/ResumoLinha";
 import VendaUtilizacao from "../models/VendaUtilizacao";
+import SaldoCreditos from "../models/SaldoCreditos";
 
 interface Periodo {
   dataInicio: Date;
@@ -68,16 +69,17 @@ export async function getIndicadores({ dataInicio, dataFim }: Periodo) {
 
 type Agrupamento = "diario" | "semanal" | "mensal";
 
+const formatoPorAgrupamento: Record<Agrupamento, string> = {
+  diario: "%Y-%m-%d",
+  semanal: "%G-W%V",
+  mensal: "%Y-%m",
+};
+
 export async function getRelatorioPorPeriodo({
   dataInicio,
   dataFim,
   agrupamento,
 }: Periodo & { agrupamento: Agrupamento }) {
-  const formatoPorAgrupamento: Record<Agrupamento, string> = {
-    diario: "%Y-%m-%d",
-    semanal: "%G-W%V",
-    mensal: "%Y-%m",
-  };
 
   const formato = formatoPorAgrupamento[agrupamento] || formatoPorAgrupamento.diario;
   const periodo = { data: { $gte: dataInicio, $lte: dataFim } };
@@ -205,4 +207,64 @@ export async function listarPorLinha({
   }));
 
   return { itens, total, pagina: paginaAtual, limite: porPagina };
+}
+
+export async function getSaldo({
+  dataInicio,
+  dataFim,
+  agrupamento,
+}: Periodo & { agrupamento: Agrupamento }) {
+  const formato = formatoPorAgrupamento[agrupamento] || formatoPorAgrupamento.diario;
+
+  const [periodos, anterior, ultimo] = await Promise.all([
+    SaldoCreditos.aggregate([
+      { $match: { data: { $gte: dataInicio, $lte: dataFim } } },
+      // O $last abaixo só faz sentido com os documentos em ordem de data.
+      { $sort: { data: 1 } },
+      {
+        $group: {
+          _id: { $dateToString: { format: formato, date: "$data" } },
+          inicio: { $min: "$data" },
+          fim: { $max: "$data" },
+          // Saldo é uma foto do fim do dia: vale o último do período, não a soma.
+          saldoFinal: { $last: "$saldoFinal" },
+          creditosTransferidos: { $sum: "$creditosTransferidos" },
+          dias: { $sum: 1 },
+        },
+      },
+      { $sort: { _id: 1 } },
+    ]),
+    // Saldo de abertura: o último registro antes do período começar.
+    SaldoCreditos.findOne({ data: { $lt: dataInicio } }).sort({ data: -1 }).lean(),
+    // Saldo de fechamento: o último registro até o fim do período. Se o período
+    // termina num dia sem registro, vale o saldo do último dia que teve.
+    SaldoCreditos.findOne({ data: { $lte: dataFim } }).sort({ data: -1 }).lean(),
+  ]);
+
+  const saldoInicial = anterior ? anterior.saldoFinal : null;
+  const saldoFinal = ultimo ? ultimo.saldoFinal : null;
+
+  return {
+    resumo: {
+      saldoInicial,
+      saldoFinal,
+      dataSaldoFinal: ultimo ? ultimo.data : null,
+      variacao:
+        saldoInicial !== null && saldoFinal !== null
+          ? arredondarReais(saldoFinal - saldoInicial)
+          : null,
+      creditosTransferidos: arredondarReais(
+        periodos.reduce((soma, p) => soma + p.creditosTransferidos, 0)
+      ),
+      dias: periodos.reduce((soma, p) => soma + p.dias, 0),
+    },
+    periodos: periodos.map((p) => ({
+      periodo: p._id,
+      inicio: p.inicio,
+      fim: p.fim,
+      saldoFinal: p.saldoFinal,
+      creditosTransferidos: arredondarReais(p.creditosTransferidos),
+      dias: p.dias,
+    })),
+  };
 }

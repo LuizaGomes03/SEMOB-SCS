@@ -54,3 +54,14 @@ export async function listarPorLinha(req: Request, res: Response, next: NextFunc
     next(err);
   }
 }
+
+export async function saldo(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { dataInicio, dataFim } = parseDatas(req);
+    const agrupamento = (req.query.agrupamento as "diario" | "semanal" | "mensal") || "diario";
+    const dados = await operacaoService.getSaldo({ dataInicio, dataFim, agrupamento });
+    res.json(dados);
+  } catch (err) {
+    next(err);
+  }
+}

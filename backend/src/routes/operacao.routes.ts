@@ -9,6 +9,9 @@ router.get("/indicadores", operacaoController.indicadores);
 // GET /api/operacao/relatorio?dataInicio=...&dataFim=...&agrupamento=diario|semanal|mensal
 router.get("/relatorio", operacaoController.relatorio);
 
+// GET /api/operacao/saldo?dataInicio=...&dataFim=...&agrupamento=diario|semanal|mensal
+router.get("/saldo", operacaoController.saldo);
+
 // GET /api/operacao?dataInicio=...&dataFim=...&busca=001&ordenarPor=quilometragem&ordem=desc&pagina=1&limite=20
 router.get("/", operacaoController.listarPorLinha);
 
