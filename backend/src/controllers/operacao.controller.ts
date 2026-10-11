@@ -1,11 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import * as operacaoService from "../services/operacao.service";
-
-function parseDatas(req: Request) {
-  const dataInicio = req.query.dataInicio ? new Date(req.query.dataInicio as string) : new Date(0);
-  const dataFim = req.query.dataFim ? new Date(req.query.dataFim as string) : new Date();
-  return { dataInicio, dataFim };
-}
+import { parseDatas } from "../utils/datas";
 
 export async function indicadores(req: Request, res: Response, next: NextFunction) {
   try {
