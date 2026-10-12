@@ -15,7 +15,7 @@ router.get("/saldo", operacaoController.saldo);
 // GET /api/operacao/ultima-data
 router.get("/ultima-data", operacaoController.ultimaData);
 
-// GET /api/operacao?dataInicio=...&dataFim=...&busca=001&ordenarPor=quilometragem&ordem=desc&pagina=1&limite=20
+// GET /api/operacao?dataInicio=...&dataFim=...&busca=01&ordenarPor=quilometragem&ordem=desc&pagina=1&limite=20
 router.get("/", operacaoController.listarPorLinha);
 
 export default router;
