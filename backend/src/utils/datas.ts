@@ -1,9 +1,40 @@
 import { Request } from "express";
 
+// Erro com status HTTP. Lançado de qualquer lugar, o errorHandler responde com esse status.
+export class ErroHttp extends Error {
+  constructor(public status: number, message: string) {
+    super(message);
+  }
+}
+
+// Só aceita AAAA-MM-DD. Fora desse formato o JavaScript lê a data no fuso local
+// ("2026-9-14" vira 14/09 às 03:00 UTC) e o filtro perde parte do dia sem avisar.
+const FORMATO_DATA = /^\d{4}-\d{2}-\d{2}$/;
+
+function lerData(valor: unknown, nome: string) {
+  if (typeof valor !== "string" || !FORMATO_DATA.test(valor)) {
+    throw new ErroHttp(400, `${nome} deve estar no formato AAAA-MM-DD`);
+  }
+
+  const data = new Date(valor);
+  // "2026-02-31" passa no formato, mas o JavaScript transforma em 03/03. Se a data
+  // convertida não volta igual ao texto, o dia não existe.
+  if (isNaN(data.getTime()) || data.toISOString().slice(0, 10) !== valor) {
+    throw new ErroHttp(400, `${nome} não é uma data válida: ${valor}`);
+  }
+
+  return data;
+}
+
 // Lê dataInicio e dataFim da query string. Sem os parâmetros, o período é "tudo até hoje".
 export function parseDatas(req: Request) {
-  const dataInicio = req.query.dataInicio ? new Date(req.query.dataInicio as string) : new Date(0);
-  const dataFim = req.query.dataFim ? new Date(req.query.dataFim as string) : new Date();
+  const dataInicio = req.query.dataInicio !== undefined ? lerData(req.query.dataInicio, "dataInicio") : new Date(0);
+  const dataFim = req.query.dataFim !== undefined ? lerData(req.query.dataFim, "dataFim") : new Date();
+
+  if (dataInicio > dataFim) {
+    throw new ErroHttp(400, "dataInicio não pode ser depois de dataFim");
+  }
+
   return { dataInicio, dataFim };
 }
 
