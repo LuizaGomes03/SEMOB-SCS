@@ -268,3 +268,85 @@ export async function getSaldo({
     })),
   };
 }
+
+
+const paraDia = (data: Date | undefined) => (data ? data.toISOString().slice(0, 10) : null);
+
+export async function getUltimaData() {
+  const [operacao, passageiros, financeiro, saldo] = await Promise.all([
+    ResumoGeral.findOne().sort({ data: -1 }).select("data").lean(),
+    Passageiros.findOne().sort({ data: -1 }).select("data").lean(),
+    VendaUtilizacao.findOne().sort({ data: -1 }).select("data").lean(),
+    SaldoCreditos.findOne().sort({ data: -1 }).select("data").lean(),
+  ]);
+
+  return {
+    // O "hoje" do dashboard: o último dia com dados de operação
+    ultimaData: paraDia(operacao?.data),
+    porFonte: {
+      operacao: paraDia(operacao?.data),
+      passageiros: paraDia(passageiros?.data),
+      financeiro: paraDia(financeiro?.data),
+      saldo: paraDia(saldo?.data),
+    },
+  };
+}
+
+type Indicadores = Awaited<ReturnType<typeof getIndicadores>>;
+
+// Cada métrica comparada e de qual contagem de dias ela depende.
+const metricasComparadas: [keyof Indicadores, keyof Indicadores][] = [
+  ["quilometragem", "diasOperacao"],
+  ["viagens", "diasOperacao"],
+  ["passageirosPagantes", "diasPassageiros"],
+  ["passageirosNaoPagantes", "diasPassageiros"],
+  ["creditosVendidos", "diasFinanceiro"],
+  ["creditosUtilizados", "diasFinanceiro"],
+];
+
+// Compara a média por dia com dado, e não a soma: se um período tem dias faltando
+// (o financeiro não tem 5 dias de julho), a soma cai sem que nada tenha piorado.
+// Com os dois períodos completos, média e soma dão a mesma variação.
+function variacaoPercentual(atual: Indicadores, anterior: Indicadores) {
+  const resultado: Record<string, number | null> = {};
+
+  for (const [metrica, dias] of metricasComparadas) {
+    const diasAtual = atual[dias] as number;
+    const diasAnterior = anterior[dias] as number;
+    const mediaAtual = diasAtual ? (atual[metrica] as number) / diasAtual : 0;
+    const mediaAnterior = diasAnterior ? (anterior[metrica] as number) / diasAnterior : 0;
+
+    // Sem dado num dos lados, ou base zero, não existe variação: null, não 0 nem Infinity.
+    resultado[metrica] =
+      diasAtual && diasAnterior && mediaAnterior
+        ? Math.round(((mediaAtual - mediaAnterior) / mediaAnterior) * 1000) / 10
+        : null;
+  }
+
+  return resultado;
+}
+
+const paraDiaObrigatorio = (data: Date) => data.toISOString().slice(0, 10);
+
+export async function getIndicadoresComComparacao({
+  dataInicio,
+  dataFim,
+  anterior,
+  tipo,
+}: Periodo & { anterior: Periodo; tipo: string }) {
+  const [indicadoresAtual, indicadoresAnterior] = await Promise.all([
+    getIndicadores({ dataInicio, dataFim }),
+    getIndicadores(anterior),
+  ]);
+
+  return {
+    ...indicadoresAtual,
+    comparacao: {
+      tipo,
+      dataInicio: paraDiaObrigatorio(anterior.dataInicio),
+      dataFim: paraDiaObrigatorio(anterior.dataFim),
+      anterior: indicadoresAnterior,
+      variacaoPercentual: variacaoPercentual(indicadoresAtual, indicadoresAnterior),
+    },
+  };
+}

@@ -1,11 +1,30 @@
 import { Request, Response, NextFunction } from "express";
 import * as operacaoService from "../services/operacao.service";
-import { parseDatas } from "../utils/datas";
+import { parseDatas, periodoAnterior, tiposComparacao, TipoComparacao } from "../utils/datas";
 
 export async function indicadores(req: Request, res: Response, next: NextFunction) {
   try {
     const { dataInicio, dataFim } = parseDatas(req);
-    const dados = await operacaoService.getIndicadores({ dataInicio, dataFim });
+    const comparacao = (req.query.comparacao as string) || "anterior";
+
+    if (!tiposComparacao.includes(comparacao as TipoComparacao)) {
+      return res.status(400).json({
+        erro: `Comparação inválida. Use uma de: ${tiposComparacao.join(", ")}`,
+      });
+    }
+
+    if (!req.query.dataInicio) {
+      const dados = await operacaoService.getIndicadores({ dataInicio, dataFim });
+      return res.json({ ...dados, comparacao: null });
+    }
+
+    const anterior = periodoAnterior(dataInicio, dataFim, comparacao as TipoComparacao);
+    const dados = await operacaoService.getIndicadoresComComparacao({
+      dataInicio,
+      dataFim,
+      anterior,
+      tipo: comparacao,
+    });
     res.json(dados);
   } catch (err) {
     next(err);
@@ -55,6 +74,15 @@ export async function saldo(req: Request, res: Response, next: NextFunction) {
     const { dataInicio, dataFim } = parseDatas(req);
     const agrupamento = (req.query.agrupamento as "diario" | "semanal" | "mensal") || "diario";
     const dados = await operacaoService.getSaldo({ dataInicio, dataFim, agrupamento });
+    res.json(dados);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function ultimaData(_req: Request, res: Response, next: NextFunction) {
+  try {
+    const dados = await operacaoService.getUltimaData();
     res.json(dados);
   } catch (err) {
     next(err);
