@@ -26,6 +26,7 @@ class _SemobAppState extends State<SemobApp> {
   final OperacaoApi _api = OperacaoApi();
   final GlobalKey<ScaffoldMessengerState> _messengerKey =
       GlobalKey<ScaffoldMessengerState>();
+  final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
 
   DateTime? _ultimaData;
   String? _erroUltimaData;
@@ -69,8 +70,8 @@ class _SemobAppState extends State<SemobApp> {
   bool _isHighContrast = false;
   bool _isEnhancedFocus = false;
 
-  void _openReport(BuildContext navigatorContext) {
-    Navigator.of(navigatorContext).push(
+  void _openReport() {
+    _navigatorKey.currentState?.push(
       MaterialPageRoute(
         builder: (_) => RelatorioScreen(
           selectedPeriod: _selectedPeriod,
@@ -188,7 +189,7 @@ class _SemobAppState extends State<SemobApp> {
       _selectedInvestigationType = null;
     });
 
-    Navigator.of(context).push(
+    _navigatorKey.currentState?.push(
       MaterialPageRoute(
         builder: (_) => ConfiguracoesScreen(
           textScale: _textScale,
@@ -203,7 +204,7 @@ class _SemobAppState extends State<SemobApp> {
           onToggleEnhancedFocus: () {
             setState(() => _isEnhancedFocus = !_isEnhancedFocus);
           },
-          onClose: () => Navigator.of(context).pop(),
+          onClose: () => _navigatorKey.currentState?.pop(),
         ),
       ),
     );
@@ -218,6 +219,7 @@ class _SemobAppState extends State<SemobApp> {
     return MaterialApp(
       title: 'SEMOB-SCS',
       scaffoldMessengerKey: _messengerKey,
+      navigatorKey: _navigatorKey,
       debugShowCheckedModeBanner: false,
       theme: theme,
       scrollBehavior: const AppScrollBehavior(),
@@ -241,6 +243,7 @@ class _SemobAppState extends State<SemobApp> {
         child: Column(
           children: [
             _InstitutionalHeader(
+              onOpenReport: _openReport,
               showHomeControls: !isInvestigation,
               selectedPeriod: _selectedPeriod,
 
@@ -262,7 +265,6 @@ class _SemobAppState extends State<SemobApp> {
               onOpenCustomPeriod: (dialogContext) =>
                   _selectCustomPeriod(dialogContext),
               onOpenSettings: _openSettings,
-              onOpenReport: () => _openReport(context),
             ),
             Expanded(
               child: isInvestigation
