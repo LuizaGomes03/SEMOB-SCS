@@ -1,14 +1,15 @@
-
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
 
 import '../core/constants/app_colors.dart';
-import '../mock/mock_transporte_data.dart';
+import '../core/utils/periodo.dart';
 import '../screens/dashboard/dashboard_screen.dart';
 import '../screens/detalhes/detalhes_screen.dart';
 import '../screens/configuracoes/configuracoes_screen.dart';
 import '../screens/relatorio/relatorio_screen.dart';
+import '../services/operacao_api.dart';
+import '../widgets/common/erro_carregamento.dart';
 import 'theme/app_theme.dart';
 
 class SemobApp extends StatefulWidget {
@@ -21,8 +22,46 @@ class SemobApp extends StatefulWidget {
 class _SemobAppState extends State<SemobApp> {
   String _selectedPeriod = 'hoje';
   DateTimeRange? _customRange;
-  DateTime _lastDataDate = DateTime.now().subtract(const Duration(days: 1));
   bool _isRefreshing = false;
+  final OperacaoApi _api = OperacaoApi();
+  final GlobalKey<ScaffoldMessengerState> _messengerKey =
+      GlobalKey<ScaffoldMessengerState>();
+
+  DateTime? _ultimaData;
+  String? _erroUltimaData;
+  int _versaoDados = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _carregarUltimaData();
+  }
+
+  /// Devolve true se conseguiu uma data válida.
+  Future<bool> _carregarUltimaData() async {
+    try {
+      final resposta = await _api.ultimaData();
+      if (!mounted) return false;
+      setState(() {
+        _ultimaData = resposta.ultimaData;
+        _erroUltimaData = resposta.ultimaData == null
+            ? 'O banco ainda não tem dados de operação.'
+            : null;
+      });
+      return resposta.ultimaData != null;
+    } on ApiException catch (e) {
+      if (!mounted) return false;
+      setState(() => _erroUltimaData = e.mensagem);
+      return false;
+    }
+  }
+
+  String _dataReferenciaLabel() {
+    final data = _ultimaData;
+    return data == null
+        ? 'Dados de referência: —'
+        : 'Dados de referência: ${_formatDate(data)}';
+  }
 
   InvestigationType? _selectedInvestigationType;
 
@@ -30,15 +69,13 @@ class _SemobAppState extends State<SemobApp> {
   bool _isHighContrast = false;
   bool _isEnhancedFocus = false;
 
-
-
   void _openReport(BuildContext navigatorContext) {
     Navigator.of(navigatorContext).push(
       MaterialPageRoute(
         builder: (_) => RelatorioScreen(
           selectedPeriod: _selectedPeriod,
           periodLabel: _periodLabel(),
-          dataReferenceLabel: 'Dados de referência: ${_formatDate(_lastDataDate)}',
+          dataReferenceLabel: _dataReferenciaLabel(),
         ),
       ),
     );
@@ -61,36 +98,45 @@ class _SemobAppState extends State<SemobApp> {
 
     setState(() => _isRefreshing = true);
 
-    await Future<void>.delayed(const Duration(milliseconds: 700));
+    final ok = await _carregarUltimaData();
 
     if (!mounted) return;
 
     setState(() {
       _isRefreshing = false;
-      _lastDataDate = DateTime.now().subtract(const Duration(days: 1));
+      if (ok) _versaoDados++;
     });
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Dados atualizados com sucesso.'),
-        duration: Duration(seconds: 2),
+    _messengerKey.currentState?.showSnackBar(
+      SnackBar(
+        content: Text(
+          ok
+              ? 'Dados atualizados com sucesso.'
+              : 'Não foi possível atualizar: $_erroUltimaData',
+        ),
+        duration: const Duration(seconds: 3),
       ),
     );
   }
 
   Future<void> _selectCustomPeriod(BuildContext dialogContext) async {
-    final now = DateTime.now();
+    final referencia = _ultimaData ?? DateTime.now();
 
-    final initialRange = _customRange ??
+    final initialRange =
+        _customRange ??
         DateTimeRange(
-          start: DateTime(now.year, now.month, now.day - 6),
-          end: DateTime(now.year, now.month, now.day),
+          start: DateTime(
+            referencia.year,
+            referencia.month,
+            referencia.day - 6,
+          ),
+          end: DateTime(referencia.year, referencia.month, referencia.day),
         );
 
     final range = await showDateRangePicker(
       context: dialogContext,
       firstDate: DateTime(2024),
-      lastDate: DateTime(now.year + 2),
+      lastDate: _ultimaData ?? DateTime(referencia.year + 2),
       initialDateRange: initialRange,
       helpText: 'Selecione o período da operação',
       saveText: 'Aplicar',
@@ -165,19 +211,20 @@ class _SemobAppState extends State<SemobApp> {
 
   @override
   Widget build(BuildContext context) {
-    final theme =
-        _isHighContrast ? AppTheme.highContrastTheme : AppTheme.lightTheme;
+    final theme = _isHighContrast
+        ? AppTheme.highContrastTheme
+        : AppTheme.lightTheme;
 
     return MaterialApp(
       title: 'SEMOB-SCS',
+      scaffoldMessengerKey: _messengerKey,
       debugShowCheckedModeBanner: false,
       theme: theme,
       scrollBehavior: const AppScrollBehavior(),
       builder: (context, child) {
         return MediaQuery(
-          data: MediaQuery.of(context).copyWith(
-            textScaler: TextScaler.linear(_textScale),
-          ),
+          data: MediaQuery.of(context)
+              .copyWith(textScaler: TextScaler.linear(_textScale)),
           child: child!,
         );
       },
@@ -198,7 +245,7 @@ class _SemobAppState extends State<SemobApp> {
               selectedPeriod: _selectedPeriod,
 
               customPeriodLabel: _periodLabel(),
-              dataReferenceLabel: 'Dados de referência: ${_formatDate(_lastDataDate)}',
+              dataReferenceLabel: _dataReferenciaLabel(),
               isRefreshing: _isRefreshing,
               onPeriodSelected: (period) {
                 if (period == 'personalizado') {
@@ -224,16 +271,41 @@ class _SemobAppState extends State<SemobApp> {
                       type: _selectedInvestigationType,
                       onBack: _backToDashboard,
                     )
-                  : DashboardScreen(
-                      selectedPeriod: _selectedPeriod,
-                      isRefreshing: _isRefreshing,
-                      onOpenInvestigation: _openInvestigation,
-                      onSelectAlert: (_) {},
-                    ),
+                  : _buildDashboard(),
             ),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildDashboard() {
+    final ultimaData = _ultimaData;
+
+    if (ultimaData == null) {
+      if (_erroUltimaData == null) {
+        return const Center(child: CircularProgressIndicator());
+      }
+      return ErroCarregamento(
+        mensagem: _erroUltimaData!,
+        onTentarNovamente: () {
+          setState(() => _erroUltimaData = null);
+          _carregarUltimaData();
+        },
+      );
+    }
+
+    return DashboardScreen(
+      api: _api,
+      periodo: periodoDaConsulta(
+        botao: _selectedPeriod,
+        ultimaData: ultimaData,
+        personalizado: _customRange,
+      ),
+      versaoDados: _versaoDados,
+      isRefreshing: _isRefreshing,
+      onOpenInvestigation: _openInvestigation,
+      onSelectAlert: (_) {},
     );
   }
 }
@@ -385,9 +457,7 @@ class _InstitutionalHeader extends StatelessWidget {
           label: const Text('Atualizar'),
           style: OutlinedButton.styleFrom(
             foregroundColor: Colors.white,
-            side: BorderSide(
-              color: Colors.white.withValues(alpha: 0.75),
-            ),
+            side: BorderSide(color: Colors.white.withValues(alpha: 0.75)),
             minimumSize: const Size(126, 42),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(10),
@@ -400,9 +470,7 @@ class _InstitutionalHeader extends StatelessWidget {
           label: const Text('Relatório'),
           style: OutlinedButton.styleFrom(
             foregroundColor: Colors.white,
-            side: BorderSide(
-              color: Colors.white.withValues(alpha: 0.75),
-            ),
+            side: BorderSide(color: Colors.white.withValues(alpha: 0.75)),
             minimumSize: const Size(122, 42),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(10),
@@ -462,10 +530,7 @@ class _InstitutionalHeader extends StatelessWidget {
               IconButton(
                 tooltip: 'Configurações',
                 onPressed: onOpenSettings,
-                icon: const Icon(
-                  Icons.settings_outlined,
-                  color: Colors.white,
-                ),
+                icon: const Icon(Icons.settings_outlined, color: Colors.white),
               ),
             const SizedBox(width: 4),
             _profileCircle(),
@@ -496,9 +561,7 @@ class _InstitutionalHeader extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.13),
         borderRadius: BorderRadius.circular(11),
-        border: Border.all(
-          color: Colors.white.withValues(alpha: 0.25),
-        ),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -529,13 +592,9 @@ class _InstitutionalHeader extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  color: selected
-                      ? const Color(0xFF3D5D9A)
-                      : Colors.white,
+                  color: selected ? const Color(0xFF3D5D9A) : Colors.white,
                   fontSize: 13,
-                  fontWeight: selected
-                      ? FontWeight.w800
-                      : FontWeight.w600,
+                  fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
                 ),
               ),
             ),
@@ -551,9 +610,9 @@ class AppScrollBehavior extends MaterialScrollBehavior {
 
   @override
   Set<PointerDeviceKind> get dragDevices => {
-        PointerDeviceKind.touch,
-        PointerDeviceKind.mouse,
-        PointerDeviceKind.trackpad,
-        PointerDeviceKind.stylus,
-      };
+    PointerDeviceKind.touch,
+    PointerDeviceKind.mouse,
+    PointerDeviceKind.trackpad,
+    PointerDeviceKind.stylus,
+  };
 }

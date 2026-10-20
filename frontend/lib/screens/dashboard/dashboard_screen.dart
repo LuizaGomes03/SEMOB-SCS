@@ -2,78 +2,144 @@ import 'package:flutter/material.dart';
 
 import '../../core/constants/app_colors.dart';
 import '../../core/responsive/breakpoints.dart';
-import '../../mock/mock_transporte_data.dart';
-import '../../models/kpi_data.dart';
+import '../../core/utils/formatters.dart';
+import '../../core/utils/periodo.dart';
+import '../../models/indicadores.dart';
+import '../../services/operacao_api.dart';
+import '../../widgets/common/erro_carregamento.dart';
 import '../detalhes/detalhes_screen.dart';
 
-class DashboardScreen extends StatelessWidget {
-  final String selectedPeriod;
+class DashboardScreen extends StatefulWidget {
+  final OperacaoApi api;
+  final PeriodoConsulta periodo;
+  final int versaoDados;
   final bool isRefreshing;
   final ValueChanged<InvestigationType> onOpenInvestigation;
   final Function(dynamic) onSelectAlert;
 
   const DashboardScreen({
     super.key,
-    required this.selectedPeriod,
+    required this.api,
+    required this.periodo,
+    required this.versaoDados,
     required this.isRefreshing,
     required this.onOpenInvestigation,
     required this.onSelectAlert,
   });
 
   @override
-  Widget build(BuildContext context) {
-    final kpis = MockTransporteData.getKpisByPeriod(
-      selectedPeriod,
-    );
+  State<DashboardScreen> createState() => _DashboardScreenState();
+}
 
-    final km = kpis['km'] as KpiData;
-    final viagens = kpis['viagens'] as KpiData;
-    final pagantes = kpis['pagantes'] as KpiData;
-    final naoPagantes = kpis['naoPagantes'] as KpiData;
-    final financeiro = kpis['financeiro'] as KpiData;
+class _DashboardScreenState extends State<DashboardScreen> {
+  late Future<Indicadores> _indicadores;
+
+  @override
+  void initState() {
+    super.initState();
+    _buscar();
+  }
+
+  @override
+  void didUpdateWidget(covariant DashboardScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.periodo != widget.periodo ||
+        oldWidget.versaoDados != widget.versaoDados) {
+      _buscar();
+    }
+  }
+
+  void _buscar() {
+    _indicadores = widget.api.indicadores(
+      dataInicio: widget.periodo.inicio,
+      dataFim: widget.periodo.fim,
+      comparacao: widget.periodo.comparacao,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<Indicadores>(
+      future: _indicadores,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          return ErroCarregamento(
+            mensagem: snapshot.error.toString(),
+            onTentarNovamente: () => setState(_buscar),
+          );
+        }
+        return _buildConteudo(snapshot.data!);
+      },
+    );
+  }
+
+  // ================================================================
+  // CONTEÚDO
+  // ================================================================
+
+  Widget _buildConteudo(Indicadores dados) {
+    final variacao =
+        dados.comparacao?.variacaoPercentual ?? const <String, double?>{};
 
     final cards = [
       _DashboardKpi(
         title: 'Quilometragem',
-        data: km,
+        valor: Formatters.number(dados.quilometragem),
+        detalhe: 'km',
+        variacao: variacao['quilometragem'],
+        semDados: dados.diasOperacao == 0,
         icon: Icons.route,
         type: InvestigationType.quilometragem,
       ),
       _DashboardKpi(
         title: 'Viagens',
-        data: viagens,
+        valor: Formatters.number(dados.viagens),
+        detalhe: 'de ${Formatters.number(dados.viagensProgramadas)} programadas',
+        variacao: variacao['viagens'],
+        semDados: dados.diasOperacao == 0,
         icon: Icons.directions_bus,
         type: InvestigationType.viagens,
       ),
       _DashboardKpi(
         title: 'Passageiros Pagantes',
-        data: pagantes,
+        valor: Formatters.number(dados.passageirosPagantes),
+        detalhe: 'passageiros',
+        variacao: variacao['passageirosPagantes'],
+        semDados: dados.diasPassageiros == 0,
         icon: Icons.people,
         type: InvestigationType.pagantes,
       ),
       _DashboardKpi(
         title: 'Gratuidades',
-        data: naoPagantes,
+        valor: Formatters.number(dados.passageirosNaoPagantes),
+        detalhe: 'passageiros não pagantes',
+        variacao: variacao['passageirosNaoPagantes'],
+        semDados: dados.diasPassageiros == 0,
         icon: Icons.card_membership,
         type: InvestigationType.gratuidades,
       ),
       _DashboardKpi(
         title: 'Financeiro',
-        data: financeiro,
+        valor: Formatters.currency(dados.creditosVendidos),
+        detalhe:
+            'em créditos vendidos · ${Formatters.currency(dados.creditosUtilizados)} utilizados',
+        variacao: variacao['creditosVendidos'],
+        semDados: dados.diasFinanceiro == 0,
         icon: Icons.attach_money,
         type: InvestigationType.financeiro,
       ),
     ];
+
+    final rotuloComparacao = _rotuloComparacao(dados.comparacao);
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ==========================================================
-          // CABEÇALHO
-          // ==========================================================
-
           const Text(
             'Monitoramento da Operação',
             style: TextStyle(
@@ -82,59 +148,21 @@ class DashboardScreen extends StatelessWidget {
               color: AppColors.textPrimary,
             ),
           ),
-
           const SizedBox(height: 6),
-
-          const Text(
-            'Visão rápida dos principais indicadores do transporte municipal',
-            style: TextStyle(
+          Text(
+            'Período: ${_rotuloPeriodo(widget.periodo.inicio, widget.periodo.fim)}',
+            style: const TextStyle(
               fontSize: 15,
               color: AppColors.textSecondary,
             ),
           ),
-
-          const SizedBox(height: 22),
-
-          // ==========================================================
-          // LEGENDA
-          // ==========================================================
-
-          Row(
-            children: [
-              _buildLegend(
-                color: Colors.green,
-                label: 'Normal',
-              ),
-              const SizedBox(width: 18),
-              _buildLegend(
-                color: Colors.orange,
-                label: 'Atenção',
-              ),
-              const SizedBox(width: 18),
-              _buildLegend(
-                color: Colors.red,
-                label: 'Crítico',
-              ),
-            ],
-          ),
-
           const SizedBox(height: 26),
-
-          // ==========================================================
-          // CARDS
-          // ==========================================================
-
           LayoutBuilder(
             builder: (context, constraints) {
-              final columns =
-                  Breakpoints.getKpiColumns(context);
-
-              final spacing = 16.0;
-
+              final columns = Breakpoints.getKpiColumns(context);
+              const spacing = 16.0;
               final cardWidth =
-                  (constraints.maxWidth -
-                          ((columns - 1) * spacing)) /
-                      columns;
+                  (constraints.maxWidth - ((columns - 1) * spacing)) / columns;
 
               return Wrap(
                 spacing: spacing,
@@ -143,42 +171,26 @@ class DashboardScreen extends StatelessWidget {
                   return SizedBox(
                     width: cardWidth,
                     height: 220,
-                    child: _buildKpiCard(
-                      context,
-                      card,
-                    ),
+                    child: _buildKpiCard(card, rotuloComparacao),
                   );
                 }).toList(),
               );
             },
           ),
-
           const SizedBox(height: 22),
-
-          // ==========================================================
-          // INSTRUÇÃO
-          // ==========================================================
-
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(18),
             decoration: BoxDecoration(
-              color: AppColors.primary.withValues(
-                alpha: 0.05,
-              ),
+              color: AppColors.primary.withValues(alpha: 0.05),
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
-                color: AppColors.primary.withValues(
-                  alpha: 0.12,
-                ),
+                color: AppColors.primary.withValues(alpha: 0.12),
               ),
             ),
             child: const Row(
               children: [
-                Icon(
-                  Icons.touch_app_outlined,
-                  color: AppColors.primary,
-                ),
+                Icon(Icons.touch_app_outlined, color: AppColors.primary),
                 SizedBox(width: 12),
                 Expanded(
                   child: Text(
@@ -201,29 +213,15 @@ class DashboardScreen extends StatelessWidget {
   // CARD
   // ================================================================
 
-  Widget _buildKpiCard(
-    BuildContext context,
-    _DashboardKpi item,
-  ) {
-    final status = item.data.status;
-
-    final statusColor = _statusColor(status);
-    final statusLabel = _statusLabel(status);
-
-    final change = item.data.change;
-
-    final trendColor = change >= 0
-        ? Colors.green
-        : Colors.red;
+  Widget _buildKpiCard(_DashboardKpi item, String rotuloComparacao) {
+    final variacao = item.semDados ? null : item.variacao;
 
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: isRefreshing
+        onTap: widget.isRefreshing
             ? null
-            : () {
-                onOpenInvestigation(item.type);
-              },
+            : () => widget.onOpenInvestigation(item.type),
         borderRadius: BorderRadius.circular(18),
         child: Container(
           padding: const EdgeInsets.all(22),
@@ -231,73 +229,30 @@ class DashboardScreen extends StatelessWidget {
             color: Colors.white,
             borderRadius: BorderRadius.circular(18),
             border: Border.all(
-              color: statusColor.withValues(
-                alpha: 0.30,
-              ),
+              color: AppColors.primary.withValues(alpha: 0.15),
               width: 1.5,
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(
-                  alpha: 0.04,
-                ),
+                color: Colors.black.withValues(alpha: 0.04),
                 blurRadius: 12,
                 offset: const Offset(0, 4),
               ),
             ],
           ),
           child: Column(
-            crossAxisAlignment:
-                CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                children: [
-                  Container(
-                    width: 46,
-                    height: 46,
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withValues(
-                        alpha: 0.09,
-                      ),
-                      borderRadius:
-                          BorderRadius.circular(12),
-                    ),
-                    child: Icon(
-                      item.icon,
-                      color: AppColors.primary,
-                      size: 24,
-                    ),
-                  ),
-
-                  const Spacer(),
-
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: statusColor.withValues(
-                        alpha: 0.10,
-                      ),
-                      borderRadius:
-                          BorderRadius.circular(30),
-                    ),
-                    child: Text(
-                      statusLabel,
-                      style: TextStyle(
-                        color: statusColor,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ),
-                ],
+              Container(
+                width: 46,
+                height: 46,
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.09),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(item.icon, color: AppColors.primary, size: 24),
               ),
-
               const Spacer(),
-
               Text(
                 item.title,
                 style: const TextStyle(
@@ -306,11 +261,9 @@ class DashboardScreen extends StatelessWidget {
                   fontWeight: FontWeight.w600,
                 ),
               ),
-
               const SizedBox(height: 6),
-
               Text(
-                _formatKpiValue(item.data),
+                item.semDados ? '—' : item.valor,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
@@ -319,46 +272,55 @@ class DashboardScreen extends StatelessWidget {
                   color: AppColors.textPrimary,
                 ),
               ),
-
               const SizedBox(height: 6),
-
               Text(
-                item.data.unit,
+                item.semDados ? 'Sem dados neste período' : item.detalhe,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   fontSize: 12,
                   color: AppColors.textMuted,
                 ),
               ),
-
               const SizedBox(height: 8),
-
-              Row(
-                children: [
-                  Icon(
-                    change >= 0
-                        ? Icons.trending_up
-                        : Icons.trending_down,
-                    size: 17,
-                    color: trendColor,
-                  ),
-                  const SizedBox(width: 5),
-                  Text(
-                    '${change.abs().toStringAsFixed(1)}%',
-                    style: TextStyle(
-                      color: trendColor,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(width: 5),
-                  Text(
-                    item.data.previousLabel,
-                    style: const TextStyle(
-                      fontSize: 11,
-                      color: AppColors.textMuted,
-                    ),
-                  ),
-                ],
+              // Sem base de comparação: some a linha inteira, nunca "0%".
+              SizedBox(
+                height: 18,
+                child: variacao == null
+                    ? null
+                    : Row(
+                        children: [
+                          Icon(
+                            variacao > 0
+                                ? Icons.trending_up
+                                : variacao < 0
+                                    ? Icons.trending_down
+                                    : Icons.trending_flat,
+                            size: 17,
+                            color: _corVariacao(variacao),
+                          ),
+                          const SizedBox(width: 5),
+                          Text(
+                            Formatters.percentage(variacao),
+                            style: TextStyle(
+                              color: _corVariacao(variacao),
+                              fontSize: 13,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const SizedBox(width: 5),
+                          Flexible(
+                            child: Text(
+                              rotuloComparacao,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: AppColors.textMuted,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
               ),
             ],
           ),
@@ -367,82 +329,28 @@ class DashboardScreen extends StatelessWidget {
     );
   }
 
-  // ================================================================
-  // STATUS
-  // ================================================================
-
-  Color _statusColor(KpiStatus status) {
-    switch (status) {
-      case KpiStatus.normal:
-        return Colors.green;
-
-      case KpiStatus.atencao:
-        return Colors.orange;
-
-      case KpiStatus.critico:
-        return Colors.red;
-    }
-  }
-
-  String _statusLabel(KpiStatus status) {
-    switch (status) {
-      case KpiStatus.normal:
-        return 'Normal';
-
-      case KpiStatus.atencao:
-        return 'Atenção';
-
-      case KpiStatus.critico:
-        return 'Crítico';
-    }
-  }
+  Color _corVariacao(double v) => v > 0
+      ? Colors.green
+      : v < 0
+          ? Colors.red
+          : AppColors.textMuted;
 
   // ================================================================
-  // FORMATAÇÃO
+  // RÓTULOS
   // ================================================================
 
-  String _formatKpiValue(KpiData data) {
-    if (data.unit == 'R\$') {
-      return 'R\$ ${data.value.toStringAsFixed(2)}';
-    }
+  String _diaMes(DateTime d) =>
+      '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}';
 
-    return data.value
-        .toStringAsFixed(0)
-        .replaceAllMapped(
-          RegExp(r'(\d)(?=(\d{3})+(?!\d))'),
-          (match) => '${match.group(1)}.',
-        );
-  }
+  String _rotuloPeriodo(DateTime inicio, DateTime fim) => inicio == fim
+      ? '${_diaMes(inicio)}/${inicio.year}'
+      : '${_diaMes(inicio)} a ${_diaMes(fim)}/${fim.year}';
 
-  // ================================================================
-  // LEGENDA
-  // ================================================================
-
-  Widget _buildLegend({
-    required Color color,
-    required String label,
-  }) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 9,
-          height: 9,
-          decoration: BoxDecoration(
-            color: color,
-            shape: BoxShape.circle,
-          ),
-        ),
-        const SizedBox(width: 6),
-        Text(
-          label,
-          style: const TextStyle(
-            fontSize: 12,
-            color: AppColors.textSecondary,
-          ),
-        ),
-      ],
-    );
+  String _rotuloComparacao(ComparacaoIndicadores? c) {
+    if (c == null) return '';
+    return c.dataInicio == c.dataFim
+        ? 'vs. ${_diaMes(c.dataInicio)}'
+        : 'vs. ${_diaMes(c.dataInicio)} – ${_diaMes(c.dataFim)}';
   }
 }
 
@@ -452,13 +360,19 @@ class DashboardScreen extends StatelessWidget {
 
 class _DashboardKpi {
   final String title;
-  final KpiData data;
+  final String valor;
+  final String detalhe;
+  final double? variacao;
+  final bool semDados;
   final IconData icon;
   final InvestigationType type;
 
   const _DashboardKpi({
     required this.title,
-    required this.data,
+    required this.valor,
+    required this.detalhe,
+    required this.variacao,
+    required this.semDados,
     required this.icon,
     required this.type,
   });
