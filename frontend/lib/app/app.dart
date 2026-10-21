@@ -371,20 +371,11 @@ class _InstitutionalHeader extends StatelessWidget {
                 color: Colors.white.withValues(alpha: 0.28),
               ),
               const Spacer(),
-              if (showHomeControls)
-                _buildControls(context)
-              else
-                IconButton(
-                  tooltip: 'Configurações',
-                  onPressed: onOpenSettings,
-                  icon: const Icon(
-                    Icons.settings_outlined,
-                    color: Colors.white,
-                    size: 25,
-                  ),
-                ),
-              const SizedBox(width: 8),
-              _profileCircle(),
+              if (showHomeControls) ...[
+                _buildControls(context),
+                const SizedBox(width: 12),
+              ],
+              _buildProfileSettingsButton(),
             ],
           );
         },
@@ -479,34 +470,40 @@ class _InstitutionalHeader extends StatelessWidget {
             ),
           ),
         ),
-        IconButton(
-          tooltip: 'Configurações',
-          onPressed: onOpenSettings,
-          icon: const Icon(
-            Icons.settings_outlined,
-            color: Colors.white,
-            size: 25,
-          ),
-        ),
       ],
     );
   }
 
-  Widget _profileCircle() {
-    return Container(
-      width: 38,
-      height: 38,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.16),
-        shape: BoxShape.circle,
-      ),
-      child: const Text(
-        'LG',
-        style: TextStyle(
-          color: Colors.white,
-          fontSize: 12,
-          fontWeight: FontWeight.w800,
+  Widget _buildProfileSettingsButton({bool compact = false}) {
+    return Tooltip(
+      message: 'Perfil e Configurações',
+      child: Material(
+        color: Colors.transparent,
+        shape: const CircleBorder(),
+        child: InkWell(
+          onTap: onOpenSettings,
+          customBorder: const CircleBorder(),
+          child: Container(
+            width: 38,
+            height: 38,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.16),
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: Colors.white.withValues(alpha: 0.35),
+                width: 1.5,
+              ),
+            ),
+            child: const Text(
+              'LG',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
         ),
       ),
     );
@@ -528,14 +525,8 @@ class _InstitutionalHeader extends StatelessWidget {
                   color: Colors.white,
                 ),
               ),
-            if (!showHomeControls)
-              IconButton(
-                tooltip: 'Configurações',
-                onPressed: onOpenSettings,
-                icon: const Icon(Icons.settings_outlined, color: Colors.white),
-              ),
-            const SizedBox(width: 4),
-            _profileCircle(),
+            const SizedBox(width: 6),
+            _buildProfileSettingsButton(compact: true),
           ],
         ),
         if (showHomeControls) ...[
