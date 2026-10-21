@@ -246,9 +246,7 @@ class _SemobAppState extends State<SemobApp> {
               onOpenReport: _openReport,
               showHomeControls: !isInvestigation,
               selectedPeriod: _selectedPeriod,
-
               customPeriodLabel: _periodLabel(),
-              dataReferenceLabel: _dataReferenciaLabel(),
               isRefreshing: _isRefreshing,
               onPeriodSelected: (period) {
                 if (period == 'personalizado') {
@@ -266,6 +264,50 @@ class _SemobAppState extends State<SemobApp> {
                   _selectCustomPeriod(dialogContext),
               onOpenSettings: _openSettings,
             ),
+            if (!isInvestigation)
+              Padding(
+                padding: const EdgeInsets.only(top: 8, right: 24, bottom: 2),
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Color(0x06000000),
+                          blurRadius: 4,
+                          offset: Offset(0, 1),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.event_note_rounded,
+                          size: 13,
+                          color: AppColors.primary,
+                        ),
+                        const SizedBox(width: 5),
+                        Text(
+                          _dataReferenciaLabel(),
+                          style: const TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
             Expanded(
               child: isInvestigation
                   ? DetalhesScreen(
@@ -316,7 +358,6 @@ class _InstitutionalHeader extends StatelessWidget {
   final bool showHomeControls;
   final String selectedPeriod;
   final String customPeriodLabel;
-  final String dataReferenceLabel;
   final bool isRefreshing;
   final ValueChanged<String> onPeriodSelected;
   final VoidCallback onRefresh;
@@ -328,7 +369,6 @@ class _InstitutionalHeader extends StatelessWidget {
     required this.showHomeControls,
     required this.selectedPeriod,
     required this.customPeriodLabel,
-    required this.dataReferenceLabel,
     required this.isRefreshing,
     required this.onPeriodSelected,
     required this.onRefresh,
@@ -362,6 +402,7 @@ class _InstitutionalHeader extends StatelessWidget {
           }
 
           return Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               _buildLogo(),
               const SizedBox(width: 24),
@@ -419,22 +460,7 @@ class _InstitutionalHeader extends StatelessWidget {
       crossAxisAlignment: WrapCrossAlignment.center,
       alignment: WrapAlignment.end,
       children: [
-        Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            _periodSelector(context),
-            const SizedBox(height: 3),
-            Text(
-              dataReferenceLabel,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 10,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
-        ),
+        _periodSelector(context),
         OutlinedButton.icon(
           onPressed: onRefresh,
           icon: isRefreshing
@@ -451,7 +477,8 @@ class _InstitutionalHeader extends StatelessWidget {
           style: OutlinedButton.styleFrom(
             foregroundColor: Colors.white,
             side: BorderSide(color: Colors.white.withValues(alpha: 0.75)),
-            minimumSize: const Size(126, 42),
+            minimumSize: const Size(122, 42),
+            fixedSize: const Size(122, 42),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(10),
             ),
@@ -465,6 +492,7 @@ class _InstitutionalHeader extends StatelessWidget {
             foregroundColor: Colors.white,
             side: BorderSide(color: Colors.white.withValues(alpha: 0.75)),
             minimumSize: const Size(122, 42),
+            fixedSize: const Size(122, 42),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(10),
             ),
@@ -484,8 +512,8 @@ class _InstitutionalHeader extends StatelessWidget {
           onTap: onOpenSettings,
           customBorder: const CircleBorder(),
           child: Container(
-            width: 38,
-            height: 38,
+            width: 42,
+            height: 42,
             alignment: Alignment.center,
             decoration: BoxDecoration(
               color: Colors.white.withValues(alpha: 0.16),
@@ -499,7 +527,7 @@ class _InstitutionalHeader extends StatelessWidget {
               'LG',
               style: TextStyle(
                 color: Colors.white,
-                fontSize: 12,
+                fontSize: 13,
                 fontWeight: FontWeight.w800,
               ),
             ),
@@ -571,8 +599,8 @@ class _InstitutionalHeader extends StatelessWidget {
               }
             },
             child: Container(
-              constraints: const BoxConstraints(minWidth: 70),
-              padding: const EdgeInsets.symmetric(horizontal: 10),
+              width: 108,
+              height: 36,
               alignment: Alignment.center,
               decoration: BoxDecoration(
                 color: selected ? Colors.white : Colors.transparent,
@@ -584,9 +612,10 @@ class _InstitutionalHeader extends StatelessWidget {
                     : option.$2,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
                 style: TextStyle(
                   color: selected ? const Color(0xFF3D5D9A) : Colors.white,
-                  fontSize: 13,
+                  fontSize: 12.5,
                   fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
                 ),
               ),
