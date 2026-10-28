@@ -264,50 +264,7 @@ class _SemobAppState extends State<SemobApp> {
                   _selectCustomPeriod(dialogContext),
               onOpenSettings: _openSettings,
             ),
-            if (!isInvestigation)
-              Padding(
-                padding: const EdgeInsets.only(top: 8, right: 24, bottom: 2),
-                child: Align(
-                  alignment: Alignment.centerRight,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: const Color(0xFFE2E8F0)),
-                      boxShadow: const [
-                        BoxShadow(
-                          color: Color(0x06000000),
-                          blurRadius: 4,
-                          offset: Offset(0, 1),
-                        ),
-                      ],
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(
-                          Icons.event_note_rounded,
-                          size: 13,
-                          color: AppColors.primary,
-                        ),
-                        const SizedBox(width: 5),
-                        Text(
-                          _dataReferenciaLabel(),
-                          style: const TextStyle(
-                            fontSize: 11.5,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.textPrimary,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
+            if (!isInvestigation) _buildSeloDataReferencia(),
             Expanded(
               // Os detalhes só abrem a partir de um cartão, ou seja, depois
               // que a última data já chegou; o "!= null" só satisfaz o tipo.
@@ -324,6 +281,67 @@ class _SemobAppState extends State<SemobApp> {
           ],
         ),
       ),
+    );
+  }
+
+  /// Selo com a data dos dados. Maior e alinhado à margem dos cards,
+  /// já que agora é a única indicação de data na tela.
+  Widget _buildSeloDataReferencia() {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        // Mesma margem lateral do dashboard (14 / 22 / 28).
+        final margem = width < 600
+            ? 14.0
+            : width < 1000
+                ? 22.0
+                : 28.0;
+        final fonte = width < 600 ? 13.0 : 15.0;
+
+        return Padding(
+          padding: EdgeInsets.only(top: 12, left: margem, right: margem),
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 14,
+                vertical: 7,
+              ),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x06000000),
+                    blurRadius: 4,
+                    offset: Offset(0, 1),
+                  ),
+                ],
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.event_note_rounded,
+                    size: fonte + 3,
+                    color: AppColors.primary,
+                  ),
+                  const SizedBox(width: 7),
+                  Text(
+                    _dataReferenciaLabel(),
+                    style: TextStyle(
+                      fontSize: fonte,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -386,10 +404,15 @@ class _InstitutionalHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.sizeOf(context).width;
+
     return Container(
       width: double.infinity,
       constraints: const BoxConstraints(minHeight: 82),
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+      padding: EdgeInsets.symmetric(
+        horizontal: screenWidth < 600 ? 12 : (screenWidth < 1000 ? 16 : 24),
+        vertical: 12,
+      ),
       decoration: const BoxDecoration(
         color: Color(0xFF3D5D9A),
         boxShadow: [
@@ -402,20 +425,20 @@ class _InstitutionalHeader extends StatelessWidget {
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final compact = constraints.maxWidth < 900;
+          final compact = constraints.maxWidth < 1180;
 
           if (compact) {
-            return _buildCompactHeader(context);
+            return _buildCompactHeader(context, screenWidth);
           }
 
           return Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              _buildLogo(),
+              _buildLogo(alturaImagem: 52, larguraMaxima: 360),
               const SizedBox(width: 24),
               Container(
                 width: 1,
-                height: 52,
+                height: 60,
                 color: Colors.white.withValues(alpha: 0.28),
               ),
               const Spacer(),
@@ -431,41 +454,62 @@ class _InstitutionalHeader extends StatelessWidget {
     );
   }
 
-  Widget _buildLogo() {
-    return SizedBox(
-      width: 230,
-      height: 54,
-      child: Image.asset(
-        'assets/images/logo_semob_scs.png',
-        fit: BoxFit.contain,
-        alignment: Alignment.centerLeft,
-        errorBuilder: (_, __, ___) {
-          return const Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.account_balance, color: Colors.white, size: 34),
-              SizedBox(width: 10),
-              Text(
-                'SEMOB-SCS',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w800,
-                  fontSize: 18,
+  /// Logo sobre fundo branco (contraste com o azul) e com tamanho por tela.
+  /// A altura manda; a largura acompanha a proporção da imagem, limitada
+  /// por [larguraMaxima] para não empurrar os botões.
+  Widget _buildLogo({
+    required double alturaImagem,
+    required double larguraMaxima,
+  }) {
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: larguraMaxima),
+      child: Container(
+        padding: EdgeInsets.symmetric(
+          horizontal: alturaImagem * 0.25,
+          vertical: alturaImagem * 0.15,
+        ),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Image.asset(
+          'assets/images/logo_semob_scs.png',
+          height: alturaImagem,
+          fit: BoxFit.contain,
+          alignment: Alignment.centerLeft,
+          filterQuality: FilterQuality.high,
+          errorBuilder: (_, __, ___) {
+            return Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.account_balance,
+                  color: const Color(0xFF3D5D9A),
+                  size: alturaImagem * 0.65,
                 ),
-              ),
-            ],
-          );
-        },
+                const SizedBox(width: 10),
+                Text(
+                  'SEMOB-SCS',
+                  style: TextStyle(
+                    color: const Color(0xFF3D5D9A),
+                    fontWeight: FontWeight.w800,
+                    fontSize: alturaImagem * 0.35,
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
       ),
     );
   }
 
-  Widget _buildControls(BuildContext context) {
+  Widget _buildControls(BuildContext context, {bool compact = false}) {
     return Wrap(
-      spacing: 10,
+      spacing: compact ? 8 : 10,
       runSpacing: 8,
       crossAxisAlignment: WrapCrossAlignment.center,
-      alignment: WrapAlignment.end,
+      alignment: compact ? WrapAlignment.start : WrapAlignment.end,
       children: [
         _periodSelector(context),
         OutlinedButton.icon(
@@ -484,8 +528,8 @@ class _InstitutionalHeader extends StatelessWidget {
           style: OutlinedButton.styleFrom(
             foregroundColor: Colors.white,
             side: BorderSide(color: Colors.white.withValues(alpha: 0.75)),
-            minimumSize: const Size(122, 42),
-            fixedSize: const Size(122, 42),
+            minimumSize: Size(compact ? 112 : 122, 42),
+            fixedSize: Size(compact ? 112 : 122, 42),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(10),
             ),
@@ -498,8 +542,8 @@ class _InstitutionalHeader extends StatelessWidget {
           style: OutlinedButton.styleFrom(
             foregroundColor: Colors.white,
             side: BorderSide(color: Colors.white.withValues(alpha: 0.75)),
-            minimumSize: const Size(122, 42),
-            fixedSize: const Size(122, 42),
+            minimumSize: Size(compact ? 112 : 122, 42),
+            fixedSize: Size(compact ? 112 : 122, 42),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(10),
             ),
@@ -544,13 +588,24 @@ class _InstitutionalHeader extends StatelessWidget {
     );
   }
 
-  Widget _buildCompactHeader(BuildContext context) {
+  Widget _buildCompactHeader(BuildContext context, double screenWidth) {
+    // Logo um pouco menor no celular, média no tablet/notebook pequeno.
+    final alturaLogo = screenWidth < 600 ? 36.0 : 46.0;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Row(
           children: [
-            Expanded(child: _buildLogo()),
+            Expanded(
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: _buildLogo(
+                  alturaImagem: alturaLogo,
+                  larguraMaxima: screenWidth < 600 ? 240 : 320,
+                ),
+              ),
+            ),
             if (showHomeControls)
               IconButton(
                 tooltip: 'Gerar relatório',
@@ -566,10 +621,9 @@ class _InstitutionalHeader extends StatelessWidget {
         ),
         if (showHomeControls) ...[
           const SizedBox(height: 10),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: _buildControls(context),
-          ),
+          // Em telas pequenas, os controles quebram em linhas em vez de
+          // exigir rolagem horizontal para encontrar os botões.
+          _buildControls(context, compact: true),
         ],
       ],
     );
@@ -582,6 +636,17 @@ class _InstitutionalHeader extends StatelessWidget {
       ('mes', 'Mês'),
       ('personalizado', 'Personalizado'),
     ];
+
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final optionWidth = screenWidth < 360
+        ? 66.0
+        : screenWidth < 430
+            ? 74.0
+            : screenWidth < 600
+                ? 82.0
+                : screenWidth < 900
+                    ? 92.0
+                    : 108.0;
 
     return Container(
       height: 42,
@@ -606,7 +671,7 @@ class _InstitutionalHeader extends StatelessWidget {
               }
             },
             child: Container(
-              width: 108,
+              width: optionWidth,
               height: 36,
               alignment: Alignment.center,
               decoration: BoxDecoration(
