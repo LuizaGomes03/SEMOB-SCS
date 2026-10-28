@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import '../core/config/api_config.dart';
 import '../core/utils/dia.dart';
 import '../models/indicadores.dart';
+import '../models/por_hora.dart';
 import '../models/ultima_data.dart';
 import '../models/relatorio_item.dart';
 
@@ -93,5 +94,21 @@ class OperacaoApi {
     return corpo
         .map((item) => RelatorioItem.fromJson(item as Map<String, dynamic>))
         .toList();
+  }
+
+  /// linha: código da linha ("02"). Sem ela, soma todas as linhas.
+  Future<PorHora> porHora({
+    required DateTime dataInicio,
+    required DateTime dataFim,
+    String? linha,
+  }) async {
+    final corpo = await _get('/operacao/por-hora', {
+      'dataInicio': formatarDia(dataInicio),
+      'dataFim': formatarDia(dataFim),
+      // "?linha": a chave só entra no mapa se linha não for null.
+      'linha': ?linha,
+    }) as Map<String, dynamic>;
+
+    return PorHora.fromJson(corpo);
   }
 }
