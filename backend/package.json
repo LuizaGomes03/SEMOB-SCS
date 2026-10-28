@@ -4,7 +4,7 @@
   "description": "",
   "main": "dist/server.js",
   "scripts": {
-    "test": "tsx --test tests/datas.test.ts tests/indicadores.test.ts",
+    "test": "tsx --test tests/datas.test.ts tests/indicadores.test.ts tests/porHora.test.ts",
     "dev": "tsx watch server.ts",
     "build": "tsc",
     "start": "node dist/server.js"
