@@ -9,10 +9,7 @@ import '../../widgets/common/erro_carregamento.dart';
 import '../detalhes/detalhes_screen.dart';
 
 // Cores de estado. Ficam aqui até existirem em AppColors.
-const _kAlerta = Color(0xFFB3261E);
 const _kAlertaBorda = Color(0xFFE5484D);
-const _kAlertaFundo = Color(0xFFFDECEC);
-const _kAlertaCard = Color(0xFFFFFBFB);
 const _kPositivo = Color(0xFF1E7B34);
 const _kNegativo = Color(0xFFC62828);
 
@@ -111,7 +108,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     required bool semDados,
     required IconData icon,
     required InvestigationType type,
-    bool maiorMelhor = true,
     List<double>? serie,
   }) {
     final limiar = _limiaresAnomalia[type];
@@ -135,7 +131,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
       semDados: semDados,
       icon: icon,
       type: type,
-      maiorMelhor: maiorMelhor,
       serie: serie,
       isAnomaly: isAnomaly,
       anomalyMessage: mensagem,
@@ -190,8 +185,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
         semDados: dados.diasPassageiros == 0,
         icon: Icons.card_membership,
         type: InvestigationType.gratuidades,
-        // Aumento de gratuidades não é "bom": a seta de alta fica vermelha.
-        maiorMelhor: false,
       ),
       _kpi(
         title: 'Financeiro',
@@ -354,13 +347,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final variationSize = (altura * 0.12).clamp(18.0, 40.0);
     final comparacaoSize = (variationSize * 0.55).clamp(13.0, 22.0);
 
-    // No card em anomalia, a variação usa a cor do alerta (o card inteiro
-    // já diz "fora do esperado"). Verde/vermelho por direção só no card normal.
-    final corVariacao = variacao == null
-        ? AppColors.textMuted
-        : anomalia
-            ? _kAlerta
-            : _corVariacao(variacao, item.maiorMelhor);
+    // Variação: verde quando positiva, vermelha quando negativa.
+    final corVariacao =
+        variacao == null ? AppColors.textMuted : _corVariacao(variacao);
 
     return Semantics(
       button: true,
@@ -376,19 +365,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
           borderRadius: BorderRadius.circular(18),
           child: Container(
             padding: EdgeInsets.all(cardPadding),
+            // Mesmo visual para todos os cards.
             decoration: BoxDecoration(
-              color: anomalia ? _kAlertaCard : Colors.white,
+              color: Colors.white,
               borderRadius: BorderRadius.circular(18),
               border: Border.all(
-                color: anomalia
-                    ? _kAlertaBorda
-                    : AppColors.primary.withValues(alpha: 0.15),
-                width: anomalia ? 2 : 1.5,
+                color: AppColors.primary.withValues(alpha: 0.15),
+                width: 1.5,
               ),
               boxShadow: [
                 BoxShadow(
-                  color: (anomalia ? _kAlerta : Colors.black)
-                      .withValues(alpha: anomalia ? 0.08 : 0.04),
+                  color: Colors.black.withValues(alpha: 0.04),
                   blurRadius: 12,
                   offset: const Offset(0, 4),
                 ),
@@ -397,13 +384,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Cabeçalho: ícone e título discretos; selo de estado à direita.
+                // Cabeçalho: ícone e título.
                 Row(
                   children: [
                     Icon(
                       item.icon,
                       size: titleSize + 4,
-                      color: anomalia ? _kAlerta : AppColors.textSecondary,
+                      color: AppColors.textSecondary,
                     ),
                     const SizedBox(width: 8),
                     Expanded(
@@ -418,7 +405,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         ),
                       ),
                     ),
-                    if (anomalia) _SeloAnomalia(fontSize: titleSize * 0.8),
                   ],
                 ),
                 SizedBox(height: altura * 0.04),
@@ -438,7 +424,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           fontSize: valueSize,
                           fontWeight: FontWeight.w800,
                           height: 1.1,
-                          color: anomalia ? _kAlerta : AppColors.textPrimary,
+                          color: AppColors.textPrimary,
                         ),
                       ),
                       if (item.unidade != null && !item.semDados) ...[
@@ -457,22 +443,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ),
                 const SizedBox(height: 6),
 
-                // Contexto: na anomalia, diz o que está fora do normal.
+                // Contexto do indicador.
                 Text(
-                  item.semDados
-                      ? 'Sem dados neste período'
-                      : anomalia && item.anomalyMessage != null
-                          ? item.anomalyMessage!
-                          : item.detalhe,
+                  item.semDados ? 'Sem dados neste período' : item.detalhe,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontSize: detailSize,
                     height: 1.25,
-                    color: anomalia
-                        ? const Color(0xFF8E2424)
-                        : AppColors.textSecondary,
-                    fontWeight: anomalia ? FontWeight.w600 : FontWeight.w400,
+                    color: AppColors.textSecondary,
+                    fontWeight: FontWeight.w400,
                   ),
                 ),
                 const Spacer(),
@@ -540,11 +520,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  /// Verde quando a variação vai na direção boa do indicador, vermelho na ruim.
-  Color _corVariacao(double v, bool maiorMelhor) {
+  /// Verde quando a variação é positiva, vermelho quando é negativa.
+  Color _corVariacao(double v) {
     if (v == 0) return AppColors.textMuted;
-    final melhorou = maiorMelhor ? v > 0 : v < 0;
-    return melhorou ? _kPositivo : _kNegativo;
+    return v > 0 ? _kPositivo : _kNegativo;
   }
 
   // ================================================================
@@ -565,44 +544,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
 // ==================================================================
 // COMPONENTES DO CARD
 // ==================================================================
-
-class _SeloAnomalia extends StatelessWidget {
-  final double fontSize;
-
-  const _SeloAnomalia({this.fontSize = 12});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(left: 6),
-      padding: EdgeInsets.symmetric(
-        horizontal: fontSize * 0.7,
-        vertical: fontSize * 0.35,
-      ),
-      decoration: BoxDecoration(
-        color: _kAlertaFundo,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: _kAlertaBorda.withValues(alpha: 0.4)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.warning_amber_rounded,
-              size: fontSize + 2, color: _kAlerta),
-          const SizedBox(width: 4),
-          Text(
-            'Anomalia',
-            style: TextStyle(
-              fontSize: fontSize,
-              fontWeight: FontWeight.w700,
-              color: _kAlerta,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
 
 class _SparklinePainter extends CustomPainter {
   final List<double> valores;
@@ -669,9 +610,6 @@ class _DashboardKpi {
   final IconData icon;
   final InvestigationType type;
 
-  /// false quando aumentar é ruim (ex.: gratuidades). Afeta só a cor da seta.
-  final bool maiorMelhor;
-
   /// Série diária do período para o minigráfico. Opcional.
   final List<double>? serie;
 
@@ -687,7 +625,6 @@ class _DashboardKpi {
     required this.semDados,
     required this.icon,
     required this.type,
-    this.maiorMelhor = true,
     this.serie,
     this.isAnomaly = false,
     this.anomalyMessage,
