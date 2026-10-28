@@ -2,13 +2,18 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+// Só NumberFormat: o intl também tem um TextDirection, que esconderia o do Flutter.
+import 'package:intl/intl.dart' show NumberFormat;
 
 import '../../core/constants/app_colors.dart';
+import '../../core/utils/dia.dart';
 import '../../core/utils/formatters.dart';
 import '../../core/utils/periodo.dart';
 import '../../mock/mock_transporte_data.dart';
 import '../../models/indicadores.dart';
 import '../../models/operacao_item.dart';
+import '../../models/por_hora.dart';
+import '../../models/relatorio_item.dart';
 import '../../services/operacao_api.dart';
 import '../../widgets/common/erro_carregamento.dart';
 
@@ -56,10 +61,14 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
   _ChartType _chartType = _ChartType.automatico;
   late Future<Indicadores> _indicadores;
 
+  /// null: período de um dia num indicador que a SEMOB não envia por hora.
+  Future<_SerieGrafico>? _serie;
+
   @override
   void initState() {
     super.initState();
     _buscar();
+    _buscarSerie();
   }
 
   @override
@@ -67,6 +76,10 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.periodo != widget.periodo) {
       _buscar();
+    }
+    // A série também depende do indicador (qual métrica, se há dado por hora).
+    if (oldWidget.periodo != widget.periodo || oldWidget.type != widget.type) {
+      _buscarSerie();
     }
   }
 
@@ -77,6 +90,90 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
       dataFim: widget.periodo.fim,
       comparacao: widget.periodo.comparacao,
     );
+  }
+
+  InvestigationType get _type => widget.type ?? InvestigationType.quilometragem;
+
+  void _buscarSerie() {
+    final inicio = widget.periodo.inicio;
+    final fim = widget.periodo.fim;
+    final type = _type;
+
+    if (type == InvestigationType.operacaoLinhas) {
+      _serie = null;
+    } else if (inicio == fim) {
+      final temPorHora = type == InvestigationType.quilometragem ||
+          type == InvestigationType.viagens;
+      _serie = temPorHora
+          ? widget.api
+              .porHora(dataInicio: inicio, dataFim: fim)
+              .then((dados) => _seriePorHora(type, dados))
+          : null;
+    } else {
+      _serie = widget.api
+          .relatorio(dataInicio: inicio, dataFim: fim, agrupamento: 'diario')
+          .then((itens) => _seriePorDia(type, inicio, fim, itens));
+    }
+  }
+
+  _SerieGrafico _seriePorHora(InvestigationType type, PorHora dados) {
+    final km = type == InvestigationType.quilometragem;
+
+    return _SerieGrafico(
+      // Hora sem viagem é zero de verdade (o backend manda as 24 horas).
+      // Já um dia sem operação nenhuma (dias == 0) é falta de dado: buraco.
+      valores: [
+        for (final h in dados.horas)
+          dados.dias == 0
+              ? null
+              : (km ? h.quilometragem : h.viagens).toDouble(),
+      ],
+      rotulos: [for (final h in dados.horas) '${h.hora}h'],
+      kmImprodutivo: km ? dados.kmImprodutivoSemHora : 0,
+    );
+  }
+
+  _SerieGrafico _seriePorDia(
+    InvestigationType type,
+    DateTime inicio,
+    DateTime fim,
+    List<RelatorioItem> itens,
+  ) {
+    // Indexa pela data: dia que não veio no relatório (sem operação) vira buraco
+    // no lugar certo, em vez de puxar os dias seguintes uma posição para trás.
+    final porDia = {for (final item in itens) formatarDia(item.inicio): item};
+
+    // DateTime(ano, mês, dia + 1) em vez de add(Duration(days: 1)): o construtor
+    // sempre cai na meia-noite do dia seguinte, mesmo com horário de verão.
+    final dias = [
+      for (var d = inicio;
+          !d.isAfter(fim);
+          d = DateTime(d.year, d.month, d.day + 1))
+        d,
+    ];
+
+    return _SerieGrafico(
+      valores: [
+        for (final d in dias) _metrica(type, porDia[formatarDia(d)])?.toDouble(),
+      ],
+      rotulos: [for (final d in dias) _formatDate(d)],
+      kmImprodutivo: 0,
+    );
+  }
+
+  /// null quando o dia não veio no relatório ou o relatório mandou null.
+  num? _metrica(InvestigationType type, RelatorioItem? item) {
+    if (item == null) return null;
+
+    return switch (type) {
+      InvestigationType.quilometragem => item.quilometragem,
+      InvestigationType.viagens => item.viagens,
+      InvestigationType.pagantes => item.passageirosPagantes,
+      InvestigationType.gratuidades => item.passageirosNaoPagantes,
+      // Provisório, igual ao cartão: créditos vendidos.
+      InvestigationType.financeiro => item.creditosVendidos,
+      InvestigationType.operacaoLinhas => null,
+    };
   }
 
   @override
@@ -519,21 +616,13 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
             ],
           ),
           const SizedBox(height: 22),
-          SizedBox(
-            height: 300,
-            child: _Chart(
-              type: current == _ChartType.automatico
-                  ? _recommendedChart(type)
-                  : current,
-              values: config.chartValues,
-              labels: _labelsForPeriod(),
-              color: AppColors.primary,
-              secondaryColor: const Color(0xFF7FA2D4),
-            ),
+          _buildChartBody(
+            current == _ChartType.automatico ? _recommendedChart(type) : current,
           ),
           const SizedBox(height: 10),
+          // O gráfico ainda não filtra por linha: por enquanto é sempre o total.
           Text(
-            'Período: ${_periodDescription()} • ${_lineFilter == 'Todas as linhas' ? 'todas as linhas' : _lineFilter}',
+            'Período: ${rotuloPeriodo(widget.periodo.inicio, widget.periodo.fim)} • todas as linhas',
             style: const TextStyle(
               fontSize: 11,
               color: AppColors.textMuted,
@@ -541,6 +630,68 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildChartBody(_ChartType chartType) {
+    final serie = _serie;
+
+    if (serie == null) {
+      return const _ChartMessage(
+        'A SEMOB não envia esse dado por hora. Escolha um período de mais de '
+        'um dia para ver a evolução.',
+      );
+    }
+
+    // Altura fixa nos três estados: a tela não "pula" quando o dado chega.
+    return FutureBuilder<_SerieGrafico>(
+      future: serie,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const SizedBox(
+            height: 300,
+            child: Center(child: CircularProgressIndicator()),
+          );
+        }
+        if (snapshot.hasError) {
+          return SizedBox(
+            height: 300,
+            child: ErroCarregamento(
+              mensagem: snapshot.error.toString(),
+              onTentarNovamente: () => setState(_buscarSerie),
+            ),
+          );
+        }
+
+        final dados = snapshot.data!;
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              height: 300,
+              child: _Chart(
+                type: chartType,
+                values: dados.valores,
+                labels: dados.rotulos,
+                color: AppColors.primary,
+                secondaryColor: const Color(0xFF7FA2D4),
+              ),
+            ),
+            if (dados.kmImprodutivo > 0) ...[
+              const SizedBox(height: 8),
+              Text(
+                '${_umDecimal.format(dados.kmImprodutivo)} km improdutivos não '
+                'têm horário e não aparecem no gráfico',
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ],
+          ],
+        );
+      },
     );
   }
 
@@ -613,28 +764,6 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
       case _ChartType.pizza:
         return 'Pizza';
     }
-  }
-
-  List<String> _labelsForPeriod() {
-    switch (_periodFilter) {
-      case 'Semanal':
-        return const ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
-      case 'Quinzenal':
-        return const ['1', '3', '5', '7', '9', '11', '13', '15'];
-      case 'Mensal':
-        return const ['1', '5', '10', '15', '20', '25', '30'];
-      case 'Personalizado':
-        return const ['Início', 'P2', 'P3', 'P4', 'P5', 'P6', 'Fim'];
-      default:
-        return const ['06h', '08h', '10h', '12h', '14h', '16h', '18h'];
-    }
-  }
-
-  String _periodDescription() {
-    if (_periodFilter == 'Personalizado' && _customRange != null) {
-      return '${_formatDate(_customRange!.start)} – ${_formatDate(_customRange!.end)}';
-    }
-    return _periodFilter;
   }
 
   String _formatDate(DateTime date) {
@@ -778,7 +907,7 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
         ),
         const SizedBox(width: 12),
         Text(
-          '${(value / total * 100).toStringAsFixed(1)}%',
+          '${_umDecimal.format(value / total * 100)}%',
           style: const TextStyle(fontWeight: FontWeight.w800),
         ),
       ],
@@ -1118,7 +1247,6 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
           analysisTitle: 'Evolução da quilometragem',
           analysisDescription:
               'Compare a quilometragem realizada ao longo do período e identifique desvios relevantes.',
-          chartValues: [82, 86, 88, 84, 91, 76, 89],
         );
       case InvestigationType.viagens:
         return const _InvestigationConfig(
@@ -1129,7 +1257,6 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
           analysisTitle: 'Viagens realizadas',
           analysisDescription:
               'Acompanhe a execução das viagens e localize desvios ao longo do período.',
-          chartValues: [90, 92, 94, 93, 95, 78, 92],
         );
       case InvestigationType.pagantes:
         return const _InvestigationConfig(
@@ -1140,7 +1267,6 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
           analysisTitle: 'Evolução dos passageiros pagantes',
           analysisDescription:
               'Observe a evolução da demanda e compare o comportamento das linhas.',
-          chartValues: [72, 78, 80, 76, 84, 60, 82],
         );
       case InvestigationType.gratuidades:
         return const _InvestigationConfig(
@@ -1151,7 +1277,6 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
           analysisTitle: 'Evolução das gratuidades',
           analysisDescription:
               'Observe a evolução dos passageiros não pagantes e identifique concentrações.',
-          chartValues: [58, 61, 64, 63, 69, 55, 67],
         );
       case InvestigationType.financeiro:
         return const _InvestigationConfig(
@@ -1162,7 +1287,6 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
           analysisTitle: 'Evolução financeira',
           analysisDescription:
               'Compare a arrecadação ao longo do período operacional.',
-          chartValues: [74, 78, 81, 79, 85, 61, 83],
         );
       case InvestigationType.operacaoLinhas:
         return const _InvestigationConfig(
@@ -1171,7 +1295,6 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
           icon: Icons.directions_bus_filled_outlined,
           analysisTitle: 'Programado × realizado',
           analysisDescription: 'Verifique quais linhas cumpriram, fizeram menos ou fizeram mais viagens.',
-          chartValues: [184, 142, 160, 150, 138, 172, 155, 146, 164, 151],
         );
     }
   }
@@ -1311,9 +1434,64 @@ class _LineInvestigationCard extends StatelessWidget {
   }
 }
 
+/// O que o gráfico desenha. Um null em [valores] é um buraco (dia sem dado),
+/// não zero: a linha é interrompida e a barra não é desenhada.
+class _SerieGrafico {
+  final List<double?> valores;
+  final List<String> rotulos;
+
+  /// Só a quilometragem por hora usa; nos outros casos fica 0.
+  final num kmImprodutivo;
+
+  const _SerieGrafico({
+    required this.valores,
+    required this.rotulos,
+    required this.kmImprodutivo,
+  });
+}
+
+/// "78,5" e "479,6": uma casa decimal com vírgula, no padrão brasileiro.
+final _umDecimal = NumberFormat('#,##0.0', 'pt_BR');
+
+/// Com muitos pontos (24 horas, um mês) os rótulos se sobrepõem. Mostra no
+/// máximo uns 8, espaçados por igual, sempre com o primeiro e o último. O
+/// penúltimo visível precisa ficar a um passo inteiro do último para não colar.
+bool _mostrarRotulo(int i, int total) {
+  const maximo = 8;
+  final passo = (total / maximo).ceil();
+  if (i == 0 || i == total - 1) return true;
+  return i % passo == 0 && total - 1 - i >= passo;
+}
+
+class _ChartMessage extends StatelessWidget {
+  final String mensagem;
+
+  const _ChartMessage(this.mensagem);
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 300,
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Text(
+            mensagem,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 14,
+              color: AppColors.textSecondary,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _Chart extends StatelessWidget {
   final _ChartType type;
-  final List<double> values;
+  final List<double?> values;
   final List<String> labels;
   final Color color;
   final Color secondaryColor;
@@ -1328,6 +1506,11 @@ class _Chart extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Os desenhos abaixo precisam de ao menos um valor para achar mínimo e máximo.
+    if (values.every((v) => v == null)) {
+      return const _ChartMessage('Sem dados neste período');
+    }
+
     switch (type) {
       case _ChartType.barras:
         return _BarChart(values: values, labels: labels, color: color);
@@ -1341,7 +1524,7 @@ class _Chart extends StatelessWidget {
 }
 
 class _LineChart extends StatelessWidget {
-  final List<double> values;
+  final List<double?> values;
   final List<String> labels;
   final Color color;
 
@@ -1365,7 +1548,7 @@ class _LineChart extends StatelessWidget {
 }
 
 class _BarChart extends StatelessWidget {
-  final List<double> values;
+  final List<double?> values;
   final List<String> labels;
   final Color color;
 
@@ -1377,7 +1560,9 @@ class _BarChart extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final maxValue = values.reduce(math.max);
+    final maxValue = values.whereType<double>().fold(0.0, math.max);
+    // Com 24 ou 31 barras o espaço de 7px de cada lado não cabe no celular.
+    final gap = values.length > 12 ? 1.5 : 7.0;
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.end,
@@ -1387,43 +1572,43 @@ class _BarChart extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: List.generate(values.length, (i) {
-              final height = 205 * (values[i] / maxValue);
+              final value = values[i];
+              final mostrar = _mostrarRotulo(i, values.length);
+              // maxValue 0 (tudo zero): barra de altura 0, sem dividir por zero.
+              final height =
+                  value == null || maxValue <= 0 ? 0.0 : 205 * (value / maxValue);
+
               return Expanded(
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 7),
+                  padding: EdgeInsets.symmetric(horizontal: gap),
                   child: Column(
                     children: [
-                      Text(
-                        values[i].toStringAsFixed(0),
-                        style: const TextStyle(
-                          fontSize: 10,
-                          color: AppColors.textSecondary,
-                        ),
+                      _rotulo(
+                        mostrar && value != null
+                            ? value.toStringAsFixed(0)
+                            : '',
+                        AppColors.textSecondary,
                       ),
                       const SizedBox(height: 5),
                       Expanded(
                         child: Align(
                           alignment: Alignment.bottomCenter,
-                          child: Container(
-                            height: height,
-                            decoration: BoxDecoration(
-                              color: color,
-                              borderRadius: const BorderRadius.vertical(
-                                top: Radius.circular(6),
-                              ),
-                            ),
-                          ),
+                          // Buraco: nenhuma barra, nem de altura zero.
+                          child: value == null
+                              ? null
+                              : Container(
+                                  height: height,
+                                  decoration: BoxDecoration(
+                                    color: color,
+                                    borderRadius: const BorderRadius.vertical(
+                                      top: Radius.circular(6),
+                                    ),
+                                  ),
+                                ),
                         ),
                       ),
                       const SizedBox(height: 8),
-                      Text(
-                        labels[i],
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 10,
-                          color: AppColors.textMuted,
-                        ),
-                      ),
+                      _rotulo(mostrar ? labels[i] : '', AppColors.textMuted),
                     ],
                   ),
                 ),
@@ -1434,10 +1619,28 @@ class _BarChart extends StatelessWidget {
       ],
     );
   }
+
+  /// Altura fixa (as barras ficam alinhadas com ou sem rótulo) e largura livre:
+  /// a coluna de uma barra estreita é menor que "01/07", então o texto pode
+  /// passar por cima das vizinhas, que nesse ponto estão sem rótulo.
+  Widget _rotulo(String texto, Color cor) {
+    return SizedBox(
+      height: 14,
+      child: OverflowBox(
+        maxWidth: 60,
+        child: Text(
+          texto,
+          maxLines: 1,
+          textAlign: TextAlign.center,
+          style: TextStyle(fontSize: 10, color: cor),
+        ),
+      ),
+    );
+  }
 }
 
 class _LineChartPainter extends CustomPainter {
-  final List<double> values;
+  final List<double?> values;
   final List<String> labels;
   final Color color;
 
@@ -1461,8 +1664,12 @@ class _LineChartPainter extends CustomPainter {
       math.max(0, size.height - top - bottom),
     );
 
-    final maxValue = values.reduce(math.max);
-    final minValue = values.reduce(math.min);
+    // Mínimo e máximo só entre os dias com dado: um buraco não é zero.
+    final presentes = values.whereType<double>();
+    if (presentes.isEmpty) return;
+    final maxValue = presentes.reduce(math.max);
+    final minValue = presentes.reduce(math.min);
+    // Pelo menos 1: com todos os valores iguais (ou todos zero) não divide por zero.
     final range = math.max(1, maxValue - minValue);
 
     final gridPaint = Paint()
@@ -1479,37 +1686,49 @@ class _LineChartPainter extends CustomPainter {
     }
 
     final path = Path();
+    // false logo depois de um buraco: o próximo ponto recomeça a linha (moveTo).
+    var tracando = false;
 
     for (int i = 0; i < values.length; i++) {
       final x = chart.left +
           chart.width * i / math.max(1, values.length - 1);
-      final normalized = (values[i] - minValue) / range;
+
+      if (_mostrarRotulo(i, values.length)) {
+        final textPainter = TextPainter(
+          text: TextSpan(
+            text: labels[i],
+            style: const TextStyle(
+              fontSize: 10,
+              color: AppColors.textMuted,
+            ),
+          ),
+          textDirection: TextDirection.ltr,
+        )..layout(maxWidth: 55);
+
+        textPainter.paint(
+          canvas,
+          Offset(x - textPainter.width / 2, chart.bottom + 10),
+        );
+      }
+
+      final value = values[i];
+      if (value == null) {
+        tracando = false;
+        continue;
+      }
+
+      final normalized = (value - minValue) / range;
       final y = chart.bottom - normalized * chart.height;
 
-      if (i == 0) {
-        path.moveTo(x, y);
-      } else {
+      if (tracando) {
         path.lineTo(x, y);
+      } else {
+        path.moveTo(x, y);
       }
+      tracando = true;
 
       final pointPaint = Paint()..color = color;
       canvas.drawCircle(Offset(x, y), 4.5, pointPaint);
-
-      final textPainter = TextPainter(
-        text: TextSpan(
-          text: labels[i],
-          style: const TextStyle(
-            fontSize: 10,
-            color: AppColors.textMuted,
-          ),
-        ),
-        textDirection: TextDirection.ltr,
-      )..layout(maxWidth: 55);
-
-      textPainter.paint(
-        canvas,
-        Offset(x - textPainter.width / 2, chart.bottom + 10),
-      );
     }
 
     final linePaint = Paint()
@@ -1623,7 +1842,6 @@ class _InvestigationConfig {
   final IconData icon;
   final String analysisTitle;
   final String analysisDescription;
-  final List<double> chartValues;
 
   const _InvestigationConfig({
     required this.title,
@@ -1631,6 +1849,5 @@ class _InvestigationConfig {
     required this.icon,
     required this.analysisTitle,
     required this.analysisDescription,
-    required this.chartValues,
   });
 }
