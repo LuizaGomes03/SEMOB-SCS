@@ -7,6 +7,7 @@ import '../core/config/api_config.dart';
 import '../core/utils/dia.dart';
 import '../models/indicadores.dart';
 import '../models/ultima_data.dart';
+import '../models/relatorio_item.dart';
 
 class ApiException implements Exception {
   final String mensagem;
@@ -23,10 +24,7 @@ class OperacaoApi {
 
   final http.Client _client;
 
-  Future<Map<String, dynamic>> _get(
-    String caminho, [
-    Map<String, String>? query,
-  ]) async {
+  Future<dynamic> _get(String caminho, [Map<String, String>? query]) async {
     final uri = Uri.parse('${ApiConfig.baseUrl}$caminho')
         .replace(queryParameters: query);
 
@@ -57,11 +55,12 @@ class OperacaoApi {
       throw ApiException(erro, statusCode: resposta.statusCode);
     }
 
-    return corpo as Map<String, dynamic>;
+    return corpo;
   }
 
   Future<UltimaData> ultimaData() async {
-    return UltimaData.fromJson(await _get('/operacao/ultima-data'));
+    final corpo = await _get('/operacao/ultima-data') as Map<String, dynamic>;
+    return UltimaData.fromJson(corpo);
   }
 
   /// comparacao: 'anterior', 'semana_anterior' ou 'mes_anterior'.
@@ -70,10 +69,29 @@ class OperacaoApi {
     required DateTime dataFim,
     String comparacao = 'anterior',
   }) async {
-    return Indicadores.fromJson(await _get('/operacao/indicadores', {
+    return Indicadores.fromJson(
+      await _get('/operacao/indicadores', {
+        'dataInicio': formatarDia(dataInicio),
+        'dataFim': formatarDia(dataFim),
+        'comparacao': comparacao,
+      }),
+    );
+  }
+
+  /// agrupamento: 'diario', 'semanal' ou 'mensal'.
+  Future<List<RelatorioItem>> relatorio({
+    required DateTime dataInicio,
+    required DateTime dataFim,
+    String agrupamento = 'diario',
+  }) async {
+    final corpo = await _get('/operacao/relatorio', {
       'dataInicio': formatarDia(dataInicio),
       'dataFim': formatarDia(dataFim),
-      'comparacao': comparacao,
-    }));
+      'agrupamento': agrupamento,
+    }) as List<dynamic>;
+
+    return corpo
+        .map((item) => RelatorioItem.fromJson(item as Map<String, dynamic>))
+        .toList();
   }
 }
