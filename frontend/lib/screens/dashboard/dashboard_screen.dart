@@ -150,7 +150,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
           const SizedBox(height: 6),
           Text(
-            'Período: ${_rotuloPeriodo(widget.periodo.inicio, widget.periodo.fim)}',
+            'Período: ${rotuloPeriodo(widget.periodo.inicio, widget.periodo.fim)}',
             style: const TextStyle(
               fontSize: 15,
               color: AppColors.textSecondary,
@@ -341,10 +341,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   String _diaMes(DateTime d) =>
       '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}';
-
-  String _rotuloPeriodo(DateTime inicio, DateTime fim) => inicio == fim
-      ? '${_diaMes(inicio)}/${inicio.year}'
-      : '${_diaMes(inicio)} a ${_diaMes(fim)}/${fim.year}';
 
   String _rotuloComparacao(ComparacaoIndicadores? c) {
     if (c == null) return '';

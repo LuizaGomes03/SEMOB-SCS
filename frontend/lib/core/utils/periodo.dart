@@ -26,6 +26,15 @@ class PeriodoConsulta {
 
 DateTime _soDia(DateTime d) => DateTime(d.year, d.month, d.day);
 
+String _diaMes(DateTime d) =>
+    '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}';
+
+/// "08/09 a 14/09/2026", ou "14/09/2026" quando é um dia só.
+/// Dashboard e detalhes usam esta mesma função para mostrar o mesmo texto.
+String rotuloPeriodo(DateTime inicio, DateTime fim) => inicio == fim
+    ? '${_diaMes(inicio)}/${inicio.year}'
+    : '${_diaMes(inicio)} a ${_diaMes(fim)}/${fim.year}';
+
 PeriodoConsulta periodoDaConsulta({
   required String botao,
   required DateTime ultimaData,
