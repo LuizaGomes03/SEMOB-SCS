@@ -5,8 +5,12 @@ import 'package:flutter/material.dart';
 
 import '../../core/constants/app_colors.dart';
 import '../../core/utils/formatters.dart';
+import '../../core/utils/periodo.dart';
 import '../../mock/mock_transporte_data.dart';
+import '../../models/indicadores.dart';
 import '../../models/operacao_item.dart';
+import '../../services/operacao_api.dart';
+import '../../widgets/common/erro_carregamento.dart';
 
 enum InvestigationType {
   quilometragem,
@@ -25,12 +29,16 @@ enum _ChartType {
 }
 
 class DetalhesScreen extends StatefulWidget {
+  final OperacaoApi api;
+  final PeriodoConsulta periodo;
   final OperacaoItem? item;
   final InvestigationType? type;
   final VoidCallback onBack;
 
   const DetalhesScreen({
     super.key,
+    required this.api,
+    required this.periodo,
     this.item,
     this.type,
     required this.onBack,
@@ -46,6 +54,30 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
   String _lineFilter = 'Todas as linhas';
   DateTimeRange? _customRange;
   _ChartType _chartType = _ChartType.automatico;
+  late Future<Indicadores> _indicadores;
+
+  @override
+  void initState() {
+    super.initState();
+    _buscar();
+  }
+
+  @override
+  void didUpdateWidget(covariant DetalhesScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.periodo != widget.periodo) {
+      _buscar();
+    }
+  }
+
+  // Mesma chamada do dashboard: o número grande daqui bate com o do cartão.
+  void _buscar() {
+    _indicadores = widget.api.indicadores(
+      dataInicio: widget.periodo.inicio,
+      dataFim: widget.periodo.fim,
+      comparacao: widget.periodo.comparacao,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -78,23 +110,55 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
               const SizedBox(height: 24),
               _buildTitle(config),
               const SizedBox(height: 24),
-              _buildFilters(),
-              const SizedBox(height: 20),
-              _buildMainKpi(config),
-              const SizedBox(height: 20),
-              _buildChartSection(config, type),
-              const SizedBox(height: 20),
-              if (type == InvestigationType.pagantes ||
-                  type == InvestigationType.gratuidades)
-                ...[
-                  _buildPassengerComposition(),
-                  const SizedBox(height: 20),
-                ],
-              _buildByLine(type),
+              // Voltar e título ficam fora do FutureBuilder: carregando ou com
+              // erro, o usuário sempre consegue voltar ao dashboard.
+              FutureBuilder<Indicadores>(
+                future: _indicadores,
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState != ConnectionState.done) {
+                    return const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 60),
+                      child: Center(child: CircularProgressIndicator()),
+                    );
+                  }
+                  if (snapshot.hasError) {
+                    return ErroCarregamento(
+                      mensagem: snapshot.error.toString(),
+                      onTentarNovamente: () => setState(_buscar),
+                    );
+                  }
+                  return _buildConteudo(config, type, snapshot.data!);
+                },
+              ),
             ],
           ),
         );
       },
+    );
+  }
+
+  Widget _buildConteudo(
+    _InvestigationConfig config,
+    InvestigationType type,
+    Indicadores dados,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildFilters(),
+        const SizedBox(height: 20),
+        _buildMainKpi(config, type, dados),
+        const SizedBox(height: 20),
+        _buildChartSection(config, type),
+        const SizedBox(height: 20),
+        if (type == InvestigationType.pagantes ||
+            type == InvestigationType.gratuidades)
+          ...[
+            _buildPassengerComposition(dados),
+            const SizedBox(height: 20),
+          ],
+        _buildByLine(type),
+      ],
     );
   }
 
@@ -139,6 +203,15 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
                   fontSize: 14,
                   color: AppColors.textSecondary,
                   height: 1.4,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Período: ${rotuloPeriodo(widget.periodo.inicio, widget.periodo.fim)}',
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textPrimary,
                 ),
               ),
             ],
@@ -301,7 +374,13 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
     }
   }
 
-  Widget _buildMainKpi(_InvestigationConfig config) {
+  Widget _buildMainKpi(
+    _InvestigationConfig config,
+    InvestigationType type,
+    Indicadores dados,
+  ) {
+    final kpi = _kpiPrincipal(type, dados);
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(24),
@@ -309,66 +388,83 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
         color: Colors.white,
         borderRadius: BorderRadius.circular(17),
         border: Border.all(
-          color: config.statusColor.withValues(alpha: 0.30),
+          color: const Color(0xFFE1E6EF),
           width: 1.4,
         ),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  config.title,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-                const SizedBox(height: 7),
-                FittedBox(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    config.value,
-                    style: const TextStyle(
-                      fontSize: 38,
-                      fontWeight: FontWeight.w900,
-                      color: AppColors.textPrimary,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  config.unit,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-              ],
+          Text(
+            config.title,
+            style: const TextStyle(
+              fontSize: 14,
+              color: AppColors.textSecondary,
             ),
           ),
-          Container(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 14,
-              vertical: 8,
-            ),
-            decoration: BoxDecoration(
-              color: config.statusColor.withValues(alpha: 0.10),
-              borderRadius: BorderRadius.circular(30),
-            ),
+          const SizedBox(height: 7),
+          FittedBox(
+            alignment: Alignment.centerLeft,
             child: Text(
-              config.status,
-              style: TextStyle(
-                color: config.statusColor,
-                fontWeight: FontWeight.w800,
+              kpi.semDados ? '—' : kpi.valor,
+              style: const TextStyle(
+                fontSize: 38,
+                fontWeight: FontWeight.w900,
+                color: AppColors.textPrimary,
               ),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            kpi.semDados ? 'Sem dados neste período' : kpi.detalhe,
+            style: const TextStyle(
+              fontSize: 13,
+              color: AppColors.textSecondary,
             ),
           ),
         ],
       ),
     );
+  }
+
+  /// Mesmo valor, formatação e regra de "sem dados" do cartão do dashboard.
+  ({String valor, String detalhe, bool semDados}) _kpiPrincipal(
+    InvestigationType type,
+    Indicadores dados,
+  ) {
+    return switch (type) {
+      InvestigationType.quilometragem => (
+        valor: Formatters.number(dados.quilometragem),
+        detalhe: 'km realizados',
+        semDados: dados.diasOperacao == 0,
+      ),
+      InvestigationType.viagens => (
+        valor: Formatters.number(dados.viagens),
+        detalhe: 'de ${Formatters.number(dados.viagensProgramadas)} programadas',
+        semDados: dados.diasOperacao == 0,
+      ),
+      InvestigationType.pagantes => (
+        valor: Formatters.number(dados.passageirosPagantes),
+        detalhe: 'passageiros pagantes',
+        semDados: dados.diasPassageiros == 0,
+      ),
+      InvestigationType.gratuidades => (
+        valor: Formatters.number(dados.passageirosNaoPagantes),
+        detalhe: 'passageiros não pagantes',
+        semDados: dados.diasPassageiros == 0,
+      ),
+      // Provisório, igual ao cartão: vendidos em destaque, utilizados embaixo.
+      InvestigationType.financeiro => (
+        valor: Formatters.currency(dados.creditosVendidos),
+        detalhe:
+            'em créditos vendidos · ${Formatters.currency(dados.creditosUtilizados)} utilizados',
+        semDados: dados.diasFinanceiro == 0,
+      ),
+      // build() desvia operacaoLinhas para outra tela antes de chegar aqui.
+      InvestigationType.operacaoLinhas => throw StateError(
+        'Operação das linhas não tem número principal.',
+      ),
+    };
   }
 
   Widget _buildChartSection(
@@ -545,19 +641,52 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
     return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}';
   }
 
-  Widget _buildPassengerComposition() {
-    const pagantes = 32450.0;
-    const gratuidades = 8230.0;
+  Widget _buildPassengerComposition(Indicadores dados) {
+    final pagantes = dados.passageirosPagantes;
+    final gratuidades = dados.passageirosNaoPagantes;
     final total = pagantes + gratuidades;
+
+    final decoration = BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(color: const Color(0xFFE1E6EF)),
+    );
+
+    // Sem passageiros (antes de 15/07/2026) ou total zero: as porcentagens
+    // dividiriam por zero, então não há rosca para desenhar.
+    if (dados.diasPassageiros == 0 || total == 0) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(22),
+        decoration: decoration,
+        child: const Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Composição dos passageiros',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            SizedBox(height: 6),
+            Text(
+              'Sem dados de passageiros neste período',
+              style: TextStyle(
+                fontSize: 13,
+                color: AppColors.textSecondary,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
 
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(22),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE1E6EF)),
-      ),
+      decoration: decoration,
       child: LayoutBuilder(
         builder: (context, constraints) {
           final compact = constraints.maxWidth < 650;
@@ -586,7 +715,7 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
               ),
               const SizedBox(height: 6),
               const Text(
-                'Aqui a distribuição em partes do total é mais útil que uma série temporal.',
+                'Divisão dos passageiros do período entre pagantes e gratuidades.',
                 style: TextStyle(
                   fontSize: 13,
                   color: AppColors.textSecondary,
@@ -627,8 +756,8 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
 
   Widget _compositionRow(
     String label,
-    double value,
-    double total,
+    num value,
+    num total,
     Color color,
   ) {
     return Row(
@@ -643,6 +772,11 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
         ),
         const SizedBox(width: 8),
         Expanded(child: Text(label)),
+        Text(
+          Formatters.number(value),
+          style: const TextStyle(color: AppColors.textSecondary),
+        ),
+        const SizedBox(width: 12),
         Text(
           '${(value / total * 100).toStringAsFixed(1)}%',
           style: const TextStyle(fontWeight: FontWeight.w800),
@@ -981,10 +1115,6 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
           description:
               'Acompanhe a quilometragem realizada em relação ao planejamento operacional.',
           icon: Icons.route,
-          value: '12.450',
-          unit: 'km realizados',
-          status: 'Normal',
-          statusColor: Colors.green,
           analysisTitle: 'Evolução da quilometragem',
           analysisDescription:
               'Compare a quilometragem realizada ao longo do período e identifique desvios relevantes.',
@@ -996,10 +1126,6 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
           description:
               'Acompanhe a execução das viagens previstas e identifique viagens não realizadas.',
           icon: Icons.directions_bus,
-          value: '1.245',
-          unit: 'viagens realizadas',
-          status: 'Atenção',
-          statusColor: Colors.orange,
           analysisTitle: 'Viagens realizadas',
           analysisDescription:
               'Acompanhe a execução das viagens e localize desvios ao longo do período.',
@@ -1011,10 +1137,6 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
           description:
               'Acompanhe a demanda de passageiros pagantes do sistema.',
           icon: Icons.people,
-          value: '32.450',
-          unit: 'passageiros pagantes',
-          status: 'Normal',
-          statusColor: Colors.green,
           analysisTitle: 'Evolução dos passageiros pagantes',
           analysisDescription:
               'Observe a evolução da demanda e compare o comportamento das linhas.',
@@ -1026,10 +1148,6 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
           description:
               'Acompanhe os passageiros não pagantes e sua distribuição no sistema.',
           icon: Icons.card_membership,
-          value: '8.230',
-          unit: 'passageiros não pagantes',
-          status: 'Atenção',
-          statusColor: Colors.orange,
           analysisTitle: 'Evolução das gratuidades',
           analysisDescription:
               'Observe a evolução dos passageiros não pagantes e identifique concentrações.',
@@ -1041,10 +1159,6 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
           description:
               'Acompanhe a arrecadação tarifária e os registros financeiros consolidados.',
           icon: Icons.attach_money,
-          value: 'R\$ 162.250,00',
-          unit: 'arrecadação',
-          status: 'Normal',
-          statusColor: Colors.green,
           analysisTitle: 'Evolução financeira',
           analysisDescription:
               'Compare a arrecadação ao longo do período operacional.',
@@ -1055,10 +1169,6 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
           title: 'Operação das linhas',
           description: 'Compare as 10 linhas do sistema pelo programado e realizado.',
           icon: Icons.directions_bus_filled_outlined,
-          value: '10',
-          unit: 'linhas do sistema',
-          status: 'Monitoramento',
-          statusColor: AppColors.primary,
           analysisTitle: 'Programado × realizado',
           analysisDescription: 'Verifique quais linhas cumpriram, fizeram menos ou fizeram mais viagens.',
           chartValues: [184, 142, 160, 150, 138, 172, 155, 146, 164, 151],
@@ -1511,10 +1621,6 @@ class _InvestigationConfig {
   final String title;
   final String description;
   final IconData icon;
-  final String value;
-  final String unit;
-  final String status;
-  final Color statusColor;
   final String analysisTitle;
   final String analysisDescription;
   final List<double> chartValues;
@@ -1523,10 +1629,6 @@ class _InvestigationConfig {
     required this.title,
     required this.description,
     required this.icon,
-    required this.value,
-    required this.unit,
-    required this.status,
-    required this.statusColor,
     required this.analysisTitle,
     required this.analysisDescription,
     required this.chartValues,

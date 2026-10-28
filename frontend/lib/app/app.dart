@@ -309,8 +309,12 @@ class _SemobAppState extends State<SemobApp> {
                 ),
               ),
             Expanded(
-              child: isInvestigation
+              // Os detalhes só abrem a partir de um cartão, ou seja, depois
+              // que a última data já chegou; o "!= null" só satisfaz o tipo.
+              child: isInvestigation && _ultimaData != null
                   ? DetalhesScreen(
+                      api: _api,
+                      periodo: _periodoConsulta(_ultimaData!),
                       item: null,
                       type: _selectedInvestigationType,
                       onBack: _backToDashboard,
@@ -341,17 +345,20 @@ class _SemobAppState extends State<SemobApp> {
 
     return DashboardScreen(
       api: _api,
-      periodo: periodoDaConsulta(
-        botao: _selectedPeriod,
-        ultimaData: ultimaData,
-        personalizado: _customRange,
-      ),
+      periodo: _periodoConsulta(ultimaData),
       versaoDados: _versaoDados,
       isRefreshing: _isRefreshing,
       onOpenInvestigation: _openInvestigation,
       onSelectAlert: (_) {},
     );
   }
+
+  /// Dashboard e detalhes pedem à API exatamente o mesmo período.
+  PeriodoConsulta _periodoConsulta(DateTime ultimaData) => periodoDaConsulta(
+    botao: _selectedPeriod,
+    ultimaData: ultimaData,
+    personalizado: _customRange,
+  );
 }
 
 class _InstitutionalHeader extends StatelessWidget {
