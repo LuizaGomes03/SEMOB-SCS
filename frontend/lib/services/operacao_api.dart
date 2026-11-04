@@ -82,15 +82,18 @@ class OperacaoApi {
   }
 
   /// agrupamento: 'diario', 'semanal' ou 'mensal'.
+  /// linha: código da linha ("02"). Com ela, passageiros e créditos vêm null.
   Future<List<RelatorioItem>> relatorio({
     required DateTime dataInicio,
     required DateTime dataFim,
     String agrupamento = 'diario',
+    String? linha,
   }) async {
     final corpo = await _get('/operacao/relatorio', {
       'dataInicio': formatarDia(dataInicio),
       'dataFim': formatarDia(dataFim),
       'agrupamento': agrupamento,
+      'linha': ?linha,
     }) as List<dynamic>;
 
     return corpo
