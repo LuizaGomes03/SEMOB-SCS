@@ -272,6 +272,9 @@ class _SemobAppState extends State<SemobApp> {
                   ? DetalhesScreen(
                       api: _api,
                       periodo: _periodoConsulta(_ultimaData!),
+                      ultimaData: _ultimaData!,
+                      botaoInicial: _selectedPeriod,
+                      customRange: _customRange,
                       item: null,
                       type: _selectedInvestigationType,
                       onBack: _backToDashboard,

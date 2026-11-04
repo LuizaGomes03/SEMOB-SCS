@@ -36,6 +36,9 @@ enum _ChartType {
 class DetalhesScreen extends StatefulWidget {
   final OperacaoApi api;
   final PeriodoConsulta periodo;
+  final DateTime ultimaData;
+  final String botaoInicial;
+  final DateTimeRange? customRange;
   final OperacaoItem? item;
   final InvestigationType? type;
   final VoidCallback onBack;
@@ -44,6 +47,9 @@ class DetalhesScreen extends StatefulWidget {
     super.key,
     required this.api,
     required this.periodo,
+    required this.ultimaData,
+    required this.botaoInicial,
+    this.customRange,
     this.item,
     this.type,
     required this.onBack,
@@ -54,7 +60,18 @@ class DetalhesScreen extends StatefulWidget {
 }
 
 class _DetalhesScreenState extends State<DetalhesScreen> {
-  String _periodFilter = 'Diário';
+  // Botão da tela → botão que periodoDaConsulta entende.
+  static const _botaoDoFiltro = {
+    'Diário': 'hoje',
+    'Semanal': 'semana',
+    'Quinzenal': 'quinzena',
+    'Mensal': 'mes',
+  };
+
+  // Período próprio da tela: começa igual ao do dashboard, mas muda sozinho
+  // aqui dentro, sem alterar o dashboard.
+  late PeriodoConsulta _periodo;
+  late String _periodFilter;
   String _dayFilter = 'Todos';
   String _lineFilter = 'Todas as linhas';
   DateTimeRange? _customRange;
@@ -67,6 +84,7 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
   @override
   void initState() {
     super.initState();
+    _usarPeriodoDoDashboard();
     _buscar();
     _buscarSerie();
   }
@@ -75,6 +93,7 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
   void didUpdateWidget(covariant DetalhesScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.periodo != widget.periodo) {
+      _usarPeriodoDoDashboard();
       _buscar();
     }
     // A série também depende do indicador (qual métrica, se há dado por hora).
@@ -83,20 +102,48 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
     }
   }
 
+  void _usarPeriodoDoDashboard() {
+    _periodo = widget.periodo;
+    _customRange = widget.customRange;
+    _periodFilter = switch (widget.botaoInicial) {
+      'semana' => 'Semanal',
+      'mes' || 'mês' => 'Mensal',
+      'personalizado' => 'Personalizado',
+      _ => 'Diário',
+    };
+  }
+
+  void _selecionarPeriodo(String filtro, String botao) {
+    final novo = periodoDaConsulta(
+      botao: botao,
+      ultimaData: widget.ultimaData,
+      personalizado: _customRange,
+    );
+
+    setState(() {
+      _periodFilter = filtro;
+      if (novo != _periodo) {
+        _periodo = novo;
+        _buscar();
+        _buscarSerie();
+      }
+    });
+  }
+
   // Mesma chamada do dashboard: o número grande daqui bate com o do cartão.
   void _buscar() {
     _indicadores = widget.api.indicadores(
-      dataInicio: widget.periodo.inicio,
-      dataFim: widget.periodo.fim,
-      comparacao: widget.periodo.comparacao,
+      dataInicio: _periodo.inicio,
+      dataFim: _periodo.fim,
+      comparacao: _periodo.comparacao,
     );
   }
 
   InvestigationType get _type => widget.type ?? InvestigationType.quilometragem;
 
   void _buscarSerie() {
-    final inicio = widget.periodo.inicio;
-    final fim = widget.periodo.fim;
+    final inicio = _periodo.inicio;
+    final fim = _periodo.fim;
     final type = _type;
 
     if (type == InvestigationType.operacaoLinhas) {
@@ -304,7 +351,7 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                'Período: ${rotuloPeriodo(widget.periodo.inicio, widget.periodo.fim)}',
+                'Período: ${rotuloPeriodo(_periodo.inicio, _periodo.fim)}',
                 style: const TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w700,
@@ -387,15 +434,15 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
 
   Future<void> _handleFilter(String label) async {
     if (label == 'Selecionar período') {
-      final now = DateTime.now();
+      final ultima = widget.ultimaData;
       final range = await showDateRangePicker(
         context: context,
         firstDate: DateTime(2024),
-        lastDate: DateTime(now.year + 2),
+        lastDate: ultima,
         initialDateRange: _customRange ??
             DateTimeRange(
-              start: now.subtract(const Duration(days: 6)),
-              end: now,
+              start: DateTime(ultima.year, ultima.month, ultima.day - 6),
+              end: DateTime(ultima.year, ultima.month, ultima.day),
             ),
         helpText: 'Selecionar período da investigação',
         saveText: 'Aplicar',
@@ -403,12 +450,11 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
         confirmText: 'Aplicar',
       );
 
-      if (range != null) {
-        setState(() {
-          _customRange = range;
-          _periodFilter = 'Personalizado';
-        });
-      }
+      // O usuário pode ter saído da tela com o calendário aberto.
+      if (range == null || !mounted) return;
+
+      _customRange = range;
+      _selecionarPeriodo('Personalizado', 'personalizado');
       return;
     }
 
@@ -427,7 +473,10 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
       return;
     }
 
-    setState(() => _periodFilter = label);
+    final botao = _botaoDoFiltro[label];
+    if (botao == null || label == _periodFilter) return;
+
+    _selecionarPeriodo(label, botao);
   }
 
   Future<void> _showLinePicker() async {
@@ -622,7 +671,7 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
           const SizedBox(height: 10),
           // O gráfico ainda não filtra por linha: por enquanto é sempre o total.
           Text(
-            'Período: ${rotuloPeriodo(widget.periodo.inicio, widget.periodo.fim)} • todas as linhas',
+            'Período: ${rotuloPeriodo(_periodo.inicio, _periodo.fim)} • todas as linhas',
             style: const TextStyle(
               fontSize: 11,
               color: AppColors.textMuted,

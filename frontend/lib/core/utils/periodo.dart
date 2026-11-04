@@ -49,6 +49,12 @@ PeriodoConsulta periodoDaConsulta({
         fim: hoje,
         comparacao: 'anterior',
       );
+    case 'quinzena':
+      return PeriodoConsulta(
+        inicio: DateTime(hoje.year, hoje.month, hoje.day - 14),
+        fim: hoje,
+        comparacao: 'anterior',
+      );
     case 'mes':
     case 'mês':
       return PeriodoConsulta(
