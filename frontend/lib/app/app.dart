@@ -71,12 +71,32 @@ class _SemobAppState extends State<SemobApp> {
   bool _isEnhancedFocus = false;
 
   void _openReport() {
+    final ultimaData = _ultimaData;
+
+    // Sem a última data não existe período: não inventa um.
+    if (ultimaData == null) {
+      _messengerKey.currentState?.showSnackBar(
+        SnackBar(
+          content: Text(
+            _erroUltimaData ?? 'Aguarde: os dados ainda estão carregando.',
+          ),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+
+    // Calculados aqui fora: a tela guarda o período de quando foi aberta.
+    final periodo = _periodoConsulta(ultimaData);
+    final dataReferencia = _dataReferenciaLabel();
+
     _navigatorKey.currentState?.push(
       MaterialPageRoute(
         builder: (_) => RelatorioScreen(
-          selectedPeriod: _selectedPeriod,
-          periodLabel: _periodLabel(),
-          dataReferenceLabel: _dataReferenciaLabel(),
+          api: _api,
+          periodo: periodo,
+          ultimaData: ultimaData,
+          dataReferenceLabel: dataReferencia,
         ),
       ),
     );
@@ -481,7 +501,7 @@ class _InstitutionalHeader extends StatelessWidget {
           fit: BoxFit.contain,
           alignment: Alignment.centerLeft,
           filterQuality: FilterQuality.high,
-          errorBuilder: (_, __, ___) {
+          errorBuilder: (_, _, _) {
             return Row(
               mainAxisSize: MainAxisSize.min,
               children: [
