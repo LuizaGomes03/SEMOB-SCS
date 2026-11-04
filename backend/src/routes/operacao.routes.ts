@@ -6,7 +6,8 @@ const router = Router();
 // GET /api/operacao/indicadores?dataInicio=2026-09-01&dataFim=2026-09-30&comparacao=anterior|semana_anterior|mes_anterior
 router.get("/indicadores", operacaoController.indicadores);
 
-// GET /api/operacao/relatorio?dataInicio=...&dataFim=...&agrupamento=diario|semanal|mensal
+// GET /api/operacao/relatorio?dataInicio=...&dataFim=...&agrupamento=diario|semanal|mensal&linha=02
+// Com linha, passageiros e créditos vêm null: esses dados não existem por linha.
 router.get("/relatorio", operacaoController.relatorio);
 
 // GET /api/operacao/saldo?dataInicio=...&dataFim=...&agrupamento=diario|semanal|mensal

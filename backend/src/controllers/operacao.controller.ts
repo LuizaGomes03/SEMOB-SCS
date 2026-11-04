@@ -36,7 +36,9 @@ export async function relatorio(req: Request, res: Response, next: NextFunction)
   try {
     const { dataInicio, dataFim } = parseDatas(req);
     const agrupamento = (req.query.agrupamento as "diario" | "semanal" | "mensal") || "diario";
-    const dados = await operacaoService.getRelatorioPorPeriodo({ dataInicio, dataFim, agrupamento });
+    // "?linha=" vazio vira undefined: senão o filtro procuraria a linha "" e voltaria vazio.
+    const linha = (req.query.linha as string) || undefined;
+    const dados = await operacaoService.getRelatorioPorPeriodo({ dataInicio, dataFim, agrupamento, linha });
     res.json(dados);
   } catch (err) {
     next(err);

@@ -84,7 +84,9 @@ export async function getRelatorioPorPeriodo({
   dataInicio,
   dataFim,
   agrupamento,
-}: Periodo & { agrupamento: Agrupamento }) {
+  linha,
+}: Periodo & { agrupamento: Agrupamento; linha?: string }) {
+  if (linha) return getRelatorioDaLinha({ dataInicio, dataFim, agrupamento, linha });
 
   const formato = formatoPorAgrupamento[agrupamento] || formatoPorAgrupamento.diario;
   const periodo = { data: { $gte: dataInicio, $lte: dataFim } };
@@ -293,13 +295,7 @@ export async function getPorLinha({ dataInicio, dataFim }: Periodo) {
           },
         },
       ]),
-      // As três coleções têm o mesmo formato: o banco junta e conta tudo de uma vez.
-      ViagemNaoRealizada.aggregate<NaoCumpridasPorLinha>([
-        { $match: periodo },
-        { $unionWith: { coll: ViagemNaoIniciada.collection.name, pipeline: [{ $match: periodo }] } },
-        { $unionWith: { coll: ViagemNaoTerminada.collection.name, pipeline: [{ $match: periodo }] } },
-        { $group: { _id: "$linha", total: { $sum: 1 } } },
-      ]),
+      contarNaoCumpridas(periodo, "$linha"),
     ]);
 
   return montarPorLinha(
@@ -307,6 +303,78 @@ export async function getPorLinha({ dataInicio, dataFim }: Periodo) {
     somas,
     naoCumpridas,
   );
+}
+
+// As três coleções têm o mesmo formato: o banco junta e conta tudo de uma vez.
+function contarNaoCumpridas(filtro: Record<string, unknown>, chave: unknown) {
+  return ViagemNaoRealizada.aggregate<NaoCumpridasPorLinha>([
+    { $match: filtro },
+    { $unionWith: { coll: ViagemNaoIniciada.collection.name, pipeline: [{ $match: filtro }] } },
+    { $unionWith: { coll: ViagemNaoTerminada.collection.name, pipeline: [{ $match: filtro }] } },
+    { $group: { _id: chave, total: { $sum: 1 } } },
+  ]);
+}
+
+export interface OperacaoDaLinha extends SomaPorLinha {
+  inicio: Date;
+  fim: Date;
+}
+
+// Mesmo formato do relatório geral. Passageiros e créditos vêm null, não 0: esses dados
+// não existem por linha, e zero diria que a linha não teve nenhum passageiro.
+export function montarRelatorioDaLinha(
+  operacao: OperacaoDaLinha[],
+  naoCumpridas: NaoCumpridasPorLinha[],
+) {
+  const falhasDe = new Map(naoCumpridas.map((f) => [f._id, f.total]));
+
+  return operacao.map((o) => ({
+    periodo: o._id,
+    inicio: o.inicio,
+    fim: o.fim,
+    quilometragem: arredondarKm(o.quilometragem),
+    viagens: o.viagens,
+    // Mesma conta da rota por-linha: resumo_linha não traz as programadas.
+    viagensProgramadas: o.viagens + (falhasDe.get(o._id) ?? 0),
+    passageirosPagantes: null,
+    passageirosNaoPagantes: null,
+    creditosVendidos: null,
+    creditosUtilizados: null,
+    diasOperacao: o.dias,
+    diasPassageiros: 0,
+    diasFinanceiro: 0,
+  }));
+}
+
+async function getRelatorioDaLinha({
+  dataInicio,
+  dataFim,
+  agrupamento,
+  linha,
+}: Periodo & { agrupamento: Agrupamento; linha: string }) {
+  const formato = formatoPorAgrupamento[agrupamento] || formatoPorAgrupamento.diario;
+  const filtro = { data: { $gte: dataInicio, $lte: dataFim }, linha };
+  const chave = { $dateToString: { format: formato, date: "$data" } };
+
+  const [operacao, naoCumpridas] = await Promise.all([
+    ResumoLinha.aggregate<OperacaoDaLinha>([
+      { $match: filtro },
+      {
+        $group: {
+          _id: chave,
+          inicio: { $min: "$data" },
+          fim: { $max: "$data" },
+          quilometragem: { $sum: "$kmTotal" },
+          viagens: { $sum: "$nrViagens" },
+          dias: { $sum: 1 },
+        },
+      },
+      { $sort: { _id: 1 } },
+    ]),
+    contarNaoCumpridas(filtro, chave),
+  ]);
+
+  return montarRelatorioDaLinha(operacao, naoCumpridas);
 }
 
 export async function getSaldo({
