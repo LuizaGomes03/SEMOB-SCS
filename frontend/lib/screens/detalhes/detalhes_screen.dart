@@ -150,6 +150,13 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
       _type == InvestigationType.quilometragem ||
       _type == InvestigationType.viagens;
 
+  /// Código da linha do filtro ("06"), ou null para todas. O botão só existe em
+  /// quilometragem e viagens: nos outros indicadores o filtro nunca vale.
+  String? get _linhaEscolhida {
+    if (!_temPorLinha || _lineFilter == 'Todas as linhas') return null;
+    return _lineFilter.substring('Linha '.length);
+  }
+
   // Não chama setState, igual a _buscar e _buscarSerie: quem chama decide. O
   // setState não aceita função async, por isso a espera fica em outro método.
   void _buscarPorLinha() {
@@ -196,6 +203,7 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
     final inicio = _periodo.inicio;
     final fim = _periodo.fim;
     final type = _type;
+    final linha = _linhaEscolhida;
 
     if (type == InvestigationType.operacaoLinhas) {
       _serie = null;
@@ -204,12 +212,17 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
           type == InvestigationType.viagens;
       _serie = temPorHora
           ? widget.api
-              .porHora(dataInicio: inicio, dataFim: fim)
+              .porHora(dataInicio: inicio, dataFim: fim, linha: linha)
               .then((dados) => _seriePorHora(type, dados))
           : null;
     } else {
       _serie = widget.api
-          .relatorio(dataInicio: inicio, dataFim: fim, agrupamento: 'diario')
+          .relatorio(
+            dataInicio: inicio,
+            dataFim: fim,
+            agrupamento: 'diario',
+            linha: linha,
+          )
           .then((itens) => _seriePorDia(type, inicio, fim, itens));
     }
   }
@@ -347,12 +360,13 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
         _buildChartSection(config, type),
         const SizedBox(height: 20),
         if (type == InvestigationType.viagens) ...[
-          // A key faz o Flutter criar a seção do zero quando o período muda:
-          // ela volta para "Todas", página 1, sem precisar limpar nada à mão.
+          // A key faz o Flutter criar a seção do zero quando o período ou a
+          // linha mudam: ela volta para "Todas", página 1, sem limpar nada à mão.
           _ViagensNaoCumpridasSection(
-            key: ValueKey(_periodo),
+            key: ValueKey((_periodo, _linhaEscolhida)),
             api: widget.api,
             periodo: _periodo,
+            linha: _linhaEscolhida,
           ),
           const SizedBox(height: 20),
         ],
@@ -590,8 +604,14 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
       },
     );
 
-    if (selected != null) {
-      setState(() => _lineFilter = selected);
+    if (selected != null && selected != _lineFilter) {
+      // Só o gráfico precisa buscar: o número principal e o bloco saem de
+      // _porLinha, que já tem todas as linhas, e a seção de não cumpridas
+      // busca sozinha porque a key dela muda.
+      setState(() {
+        _lineFilter = selected;
+        _buscarSerie();
+      });
     }
   }
 
@@ -653,6 +673,9 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
     InvestigationType type,
     Indicadores dados,
   ) {
+    final linha = _linhaEscolhida;
+    if (linha != null) return _kpiDaLinha(type, linha);
+
     return switch (type) {
       InvestigationType.quilometragem => (
         valor: Formatters.number(dados.quilometragem),
@@ -686,6 +709,40 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
         'Operação das linhas não tem número principal.',
       ),
     };
+  }
+
+  /// Durante uma nova busca, _porLinha ainda é do período anterior: mostrar esse
+  /// valor seria errado, e mostrar o total geral pareceria ser o da linha.
+  ({String valor, String detalhe, bool semDados}) _kpiDaLinha(
+    InvestigationType type,
+    String linha,
+  ) {
+    ({String valor, String detalhe, bool semDados}) aviso(String texto) =>
+        (valor: '—', detalhe: texto, semDados: false);
+
+    if (_carregandoPorLinha) return aviso('Carregando a Linha $linha…');
+
+    final item = _porLinha?.linhas.where((l) => l.linha == linha).firstOrNull;
+    if (_erroPorLinha != null || item == null) {
+      return aviso('Não foi possível carregar a Linha $linha');
+    }
+
+    if (type == InvestigationType.viagens) {
+      if (item.programadas == 0) return aviso('Não rodou no período');
+      return (
+        valor: Formatters.number(item.viagens),
+        detalhe: 'de ${Formatters.number(item.programadas)} programadas '
+            'na Linha $linha',
+        semDados: false,
+      );
+    }
+
+    if (item.quilometragem == 0) return aviso('Não rodou no período');
+    return (
+      valor: Formatters.number(item.quilometragem),
+      detalhe: 'km realizados na Linha $linha',
+      semDados: false,
+    );
   }
 
   Widget _buildChartSection(
@@ -744,9 +801,9 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
             current == _ChartType.automatico ? _recommendedChart(type) : current,
           ),
           const SizedBox(height: 10),
-          // O gráfico ainda não filtra por linha: por enquanto é sempre o total.
           Text(
-            'Período: ${rotuloPeriodo(_periodo.inicio, _periodo.fim)} • todas as linhas',
+            'Período: ${rotuloPeriodo(_periodo.inicio, _periodo.fim)} • '
+            '${_linhaEscolhida == null ? 'todas as linhas' : _lineFilter}',
             style: const TextStyle(
               fontSize: 11,
               color: AppColors.textMuted,
@@ -1158,6 +1215,8 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
         const SizedBox(height: 12),
         Container(
           width: double.infinity,
+          // Sem o corte, o fundo da linha em destaque sairia dos cantos redondos.
+          clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(16),
@@ -1243,10 +1302,14 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
     bool isLast,
   ) {
     final (:texto, :barra) = _resumoDaLinha(linha, totais, type);
+    final escolhida = linha.linha == _linhaEscolhida;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
       decoration: BoxDecoration(
+        // O bloco continua com todas as linhas, para comparar; a escolhida só
+        // ganha destaque.
+        color: escolhida ? AppColors.primaryLight : null,
         border: isLast
             ? null
             : Border(
@@ -1256,29 +1319,29 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          // Wrap: no celular o que não couber desce de linha, sem estourar.
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            spacing: 12,
+            runSpacing: 4,
             children: [
               Text(
-                'Linha ${linha.linha}',
-                style: const TextStyle(
-                  fontWeight: FontWeight.w700,
+                // Em texto também: só a cor não basta para quem não a distingue.
+                escolhida
+                    ? 'Linha ${linha.linha} · selecionada'
+                    : 'Linha ${linha.linha}',
+                style: TextStyle(
+                  fontWeight: escolhida ? FontWeight.w800 : FontWeight.w700,
                   color: AppColors.textPrimary,
                 ),
               ),
-              const SizedBox(width: 12),
-              // Expanded: no celular o texto quebra em vez de estourar a linha.
-              Expanded(
-                child: Text(
-                  texto,
-                  textAlign: TextAlign.end,
-                  style: TextStyle(
-                    fontWeight:
-                        barra == null ? FontWeight.w400 : FontWeight.w800,
-                    color: barra == null
-                        ? AppColors.textSecondary
-                        : AppColors.textPrimary,
-                  ),
+              Text(
+                texto,
+                style: TextStyle(
+                  fontWeight: barra == null ? FontWeight.w400 : FontWeight.w800,
+                  color: barra == null
+                      ? AppColors.textSecondary
+                      : AppColors.textPrimary,
                 ),
               ),
             ],
@@ -1588,10 +1651,14 @@ class _ViagensNaoCumpridasSection extends StatefulWidget {
   final OperacaoApi api;
   final PeriodoConsulta periodo;
 
+  /// Código da linha ("06"), ou null para todas.
+  final String? linha;
+
   const _ViagensNaoCumpridasSection({
     super.key,
     required this.api,
     required this.periodo,
+    this.linha,
   });
 
   @override
@@ -1635,6 +1702,7 @@ class _ViagensNaoCumpridasSectionState
         dataInicio: widget.periodo.inicio,
         dataFim: widget.periodo.fim,
         tipo: tipo,
+        linha: widget.linha,
         pagina: pagina,
       );
       if (!mounted || busca != _buscaAtual) return;
@@ -1686,6 +1754,8 @@ class _ViagensNaoCumpridasSectionState
   @override
   Widget build(BuildContext context) {
     final contagens = _contagens;
+    final linha = widget.linha;
+    final daLinha = linha == null ? '' : ' da Linha $linha';
 
     return Container(
       width: double.infinity,
@@ -1710,9 +1780,9 @@ class _ViagensNaoCumpridasSectionState
           if (_totalGeral > 0)
             Text(
               _totalGeral == 1
-                  ? '1 viagem programada não foi cumprida no período.'
-                  : '${Formatters.number(_totalGeral)} viagens programadas não '
-                      'foram cumpridas no período.',
+                  ? '1 viagem programada$daLinha não foi cumprida no período.'
+                  : '${Formatters.number(_totalGeral)} viagens programadas'
+                      '$daLinha não foram cumpridas no período.',
               style: const TextStyle(
                 fontSize: 13,
                 height: 1.45,
@@ -1787,14 +1857,23 @@ class _ViagensNaoCumpridasSectionState
           ErroCarregamento(mensagem: _erro!, onTentarNovamente: _recarregar),
         ];
       }
-      return const [
+      // Com linha, a frase é outra: uma linha que não rodou não teve viagem
+      // programada, e "todas foram realizadas" passaria a ideia errada.
+      final linha = widget.linha;
+      return [
         Padding(
-          padding: EdgeInsets.symmetric(vertical: 24),
+          padding: const EdgeInsets.symmetric(vertical: 24),
           child: Center(
             child: Text(
-              'Todas as viagens programadas do período foram realizadas.',
+              linha == null
+                  ? 'Todas as viagens programadas do período foram realizadas.'
+                  : 'Nenhuma viagem programada da Linha $linha deixou de ser '
+                      'cumprida no período.',
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 14, color: AppColors.textSecondary),
+              style: const TextStyle(
+                fontSize: 14,
+                color: AppColors.textSecondary,
+              ),
             ),
           ),
         ),
