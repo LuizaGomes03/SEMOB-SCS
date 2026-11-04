@@ -7,6 +7,7 @@ import '../core/config/api_config.dart';
 import '../core/utils/dia.dart';
 import '../models/indicadores.dart';
 import '../models/por_hora.dart';
+import '../models/por_linha.dart';
 import '../models/ultima_data.dart';
 import '../models/relatorio_item.dart';
 import '../models/viagem_nao_cumprida.dart';
@@ -111,6 +112,19 @@ class OperacaoApi {
     }) as Map<String, dynamic>;
 
     return PorHora.fromJson(corpo);
+  }
+
+  /// Todas as linhas do banco, mesmo as que não rodaram no período.
+  Future<PorLinha> porLinha({
+    required DateTime dataInicio,
+    required DateTime dataFim,
+  }) async {
+    final corpo = await _get('/operacao/por-linha', {
+      'dataInicio': formatarDia(dataInicio),
+      'dataFim': formatarDia(dataFim),
+    }) as Map<String, dynamic>;
+
+    return PorLinha.fromJson(corpo);
   }
 
   /// tipo: 'nao_realizada', 'nao_iniciada' ou 'nao_terminada'. Sem ele, todos.
