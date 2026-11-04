@@ -5,9 +5,11 @@ import 'package:http/http.dart' as http;
 
 import '../core/config/api_config.dart';
 import '../core/utils/dia.dart';
+import '../models/cumprimento.dart';
 import '../models/indicadores.dart';
 import '../models/por_hora.dart';
 import '../models/por_linha.dart';
+import '../models/saldo.dart';
 import '../models/ultima_data.dart';
 import '../models/relatorio_item.dart';
 import '../models/viagem_nao_cumprida.dart';
@@ -117,6 +119,19 @@ class OperacaoApi {
     return PorHora.fromJson(corpo);
   }
 
+  /// Não aceita linha: esse dado só existe para a cidade inteira.
+  Future<Cumprimento> cumprimento({
+    required DateTime dataInicio,
+    required DateTime dataFim,
+  }) async {
+    final corpo = await _get('/operacao/cumprimento', {
+      'dataInicio': formatarDia(dataInicio),
+      'dataFim': formatarDia(dataFim),
+    }) as Map<String, dynamic>;
+
+    return Cumprimento.fromJson(corpo);
+  }
+
   /// Todas as linhas do banco, mesmo as que não rodaram no período.
   Future<PorLinha> porLinha({
     required DateTime dataInicio,
@@ -150,5 +165,19 @@ class OperacaoApi {
     }) as Map<String, dynamic>;
 
     return ViagensNaoCumpridas.fromJson(corpo);
+  }
+
+  /// Só o resumo do período: a lista de "periodos" da rota não é usada.
+  Future<Saldo> saldo({
+    required DateTime dataInicio,
+    required DateTime dataFim,
+  }) async {
+    final corpo = await _get('/operacao/saldo', {
+      'dataInicio': formatarDia(dataInicio),
+      'dataFim': formatarDia(dataFim),
+      'agrupamento': 'diario',
+    }) as Map<String, dynamic>;
+
+    return Saldo.fromJson(corpo['resumo'] as Map<String, dynamic>);
   }
 }
