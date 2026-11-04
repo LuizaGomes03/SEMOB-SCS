@@ -14,6 +14,7 @@ import '../../models/indicadores.dart';
 import '../../models/operacao_item.dart';
 import '../../models/por_hora.dart';
 import '../../models/relatorio_item.dart';
+import '../../models/viagem_nao_cumprida.dart';
 import '../../services/operacao_api.dart';
 import '../../widgets/common/erro_carregamento.dart';
 
@@ -295,6 +296,16 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
         const SizedBox(height: 20),
         _buildChartSection(config, type),
         const SizedBox(height: 20),
+        if (type == InvestigationType.viagens) ...[
+          // A key faz o Flutter criar a seção do zero quando o período muda:
+          // ela volta para "Todas", página 1, sem precisar limpar nada à mão.
+          _ViagensNaoCumpridasSection(
+            key: ValueKey(_periodo),
+            api: widget.api,
+            periodo: _periodo,
+          ),
+          const SizedBox(height: 20),
+        ],
         if (type == InvestigationType.pagantes ||
             type == InvestigationType.gratuidades)
           ...[
@@ -1481,6 +1492,393 @@ class _LineInvestigationCard extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Viagens programadas que não foram cumpridas no período, uma por uma.
+/// Tem estado próprio: carregar, filtrar ou paginar aqui não reconstrói nem
+/// derruba o resto da tela.
+class _ViagensNaoCumpridasSection extends StatefulWidget {
+  final OperacaoApi api;
+  final PeriodoConsulta periodo;
+
+  const _ViagensNaoCumpridasSection({
+    super.key,
+    required this.api,
+    required this.periodo,
+  });
+
+  @override
+  State<_ViagensNaoCumpridasSection> createState() =>
+      _ViagensNaoCumpridasSectionState();
+}
+
+class _ViagensNaoCumpridasSectionState
+    extends State<_ViagensNaoCumpridasSection> {
+  /// null: "Todas".
+  String? _tipo;
+
+  /// Vêm só da busca sem filtro de tipo, porque com filtro a API devolve
+  /// apenas a contagem daquele tipo. null: ainda não chegaram.
+  Map<String, int>? _contagens;
+  int _totalGeral = 0;
+
+  List<ViagemNaoCumprida> _itens = const [];
+
+  /// Total do filtro atual: é ele que diz se ainda há página para carregar.
+  int _total = 0;
+  int _pagina = 1;
+  bool _carregando = true;
+  String? _erro;
+
+  /// Identifica a busca mais recente. Uma resposta com número menor é velha.
+  int _buscaAtual = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _buscarPagina(1);
+  }
+
+  Future<void> _buscarPagina(int pagina) async {
+    final busca = ++_buscaAtual;
+    final tipo = _tipo;
+
+    try {
+      final resposta = await widget.api.viagensNaoCumpridas(
+        dataInicio: widget.periodo.inicio,
+        dataFim: widget.periodo.fim,
+        tipo: tipo,
+        pagina: pagina,
+      );
+      if (!mounted || busca != _buscaAtual) return;
+
+      setState(() {
+        if (tipo == null) {
+          _contagens = resposta.totalPorTipo;
+          _totalGeral = resposta.total;
+        }
+        _itens = pagina == 1 ? resposta.itens : [..._itens, ...resposta.itens];
+        _total = resposta.total;
+        _pagina = pagina;
+        _carregando = false;
+      });
+    } catch (e) {
+      if (!mounted || busca != _buscaAtual) return;
+
+      setState(() {
+        _erro = e.toString();
+        _carregando = false;
+      });
+    }
+  }
+
+  void _recarregar() {
+    setState(() {
+      _itens = const [];
+      _total = 0;
+      _erro = null;
+      _carregando = true;
+    });
+    _buscarPagina(1);
+  }
+
+  void _carregarMais() {
+    setState(() {
+      _erro = null;
+      _carregando = true;
+    });
+    _buscarPagina(_pagina + 1);
+  }
+
+  void _selecionarTipo(String? tipo) {
+    if (tipo == _tipo) return;
+    _tipo = tipo;
+    _recarregar();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final contagens = _contagens;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(22),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE1E6EF)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Viagens não cumpridas',
+            style: TextStyle(
+              fontSize: 19,
+              fontWeight: FontWeight.w800,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 5),
+          if (_totalGeral > 0)
+            Text(
+              _totalGeral == 1
+                  ? '1 viagem programada não foi cumprida no período.'
+                  : '${Formatters.number(_totalGeral)} viagens programadas não '
+                      'foram cumpridas no período.',
+              style: const TextStyle(
+                fontSize: 13,
+                height: 1.45,
+                fontWeight: FontWeight.w700,
+                color: AppColors.textPrimary,
+              ),
+            ),
+          const Text(
+            'A lista vem dos relatórios da SEMOB, que não informam o motivo de '
+            'cada falha.',
+            style: TextStyle(
+              fontSize: 13,
+              height: 1.45,
+              color: AppColors.textSecondary,
+            ),
+          ),
+          if (contagens != null) ...[
+            const SizedBox(height: 16),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _botaoTipo('Todas', null, _totalGeral),
+                _botaoTipo('Não realizadas', 'nao_realizada',
+                    contagens['nao_realizada'] ?? 0),
+                _botaoTipo('Não iniciadas', 'nao_iniciada',
+                    contagens['nao_iniciada'] ?? 0),
+                _botaoTipo('Não terminadas', 'nao_terminada',
+                    contagens['nao_terminada'] ?? 0),
+              ],
+            ),
+          ],
+          const SizedBox(height: 16),
+          ..._buildLista(),
+        ],
+      ),
+    );
+  }
+
+  Widget _botaoTipo(String rotulo, String? tipo, int quantidade) {
+    final selecionado = _tipo == tipo;
+
+    return OutlinedButton(
+      onPressed: quantidade == 0 ? null : () => _selecionarTipo(tipo),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: selecionado ? Colors.white : AppColors.textPrimary,
+        backgroundColor: selecionado ? AppColors.primary : Colors.white,
+        side: BorderSide(
+          color: selecionado ? AppColors.primary : const Color(0xFFD9DEE7),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(9),
+        ),
+      ),
+      child: Text('$rotulo (${Formatters.number(quantidade)})'),
+    );
+  }
+
+  List<Widget> _buildLista() {
+    if (_itens.isEmpty) {
+      if (_carregando) {
+        return const [
+          Padding(
+            padding: EdgeInsets.symmetric(vertical: 40),
+            child: Center(child: CircularProgressIndicator()),
+          ),
+        ];
+      }
+      if (_erro != null) {
+        return [
+          ErroCarregamento(mensagem: _erro!, onTentarNovamente: _recarregar),
+        ];
+      }
+      return const [
+        Padding(
+          padding: EdgeInsets.symmetric(vertical: 24),
+          child: Center(
+            child: Text(
+              'Todas as viagens programadas do período foram realizadas.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 14, color: AppColors.textSecondary),
+            ),
+          ),
+        ),
+      ];
+    }
+
+    return [
+      for (final viagem in _itens)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: _ViagemNaoCumpridaCard(viagem: viagem),
+        ),
+      // Falha ao carregar mais: o que já veio continua na tela.
+      if (_erro != null)
+        ErroCarregamento(mensagem: _erro!, onTentarNovamente: _carregarMais)
+      else if (_itens.length < _total)
+        Center(
+          child: _carregando
+              ? const Padding(
+                  padding: EdgeInsets.all(8),
+                  child: CircularProgressIndicator(),
+                )
+              : OutlinedButton(
+                  onPressed: _carregarMais,
+                  child: const Text('Carregar mais'),
+                ),
+        ),
+    ];
+  }
+}
+
+class _ViagemNaoCumpridaCard extends StatelessWidget {
+  final ViagemNaoCumprida viagem;
+
+  const _ViagemNaoCumpridaCard({required this.viagem});
+
+  String _doisDigitos(int n) => n.toString().padLeft(2, '0');
+
+  String get _data => '${_doisDigitos(viagem.data.day)}/'
+      '${_doisDigitos(viagem.data.month)}/${viagem.data.year}';
+
+  /// "23:55", ou "00:40 (11/09)" quando cai em outro dia que não o da viagem.
+  /// Usa os campos do horário direto: ele já está no horário de São Paulo.
+  String _horario(DateTime? h) {
+    if (h == null) return '—';
+    final hora = '${_doisDigitos(h.hour)}:${_doisDigitos(h.minute)}';
+    return DateUtils.isSameDay(h, viagem.data)
+        ? hora
+        : '$hora (${_doisDigitos(h.day)}/${_doisDigitos(h.month)})';
+  }
+
+  /// (fundo, texto) do selo. As cores semânticas já têm contraste legível.
+  (Color, Color) get _coresDoTipo => switch (viagem.tipo) {
+        'nao_realizada' => (AppColors.dangerBg, AppColors.dangerText),
+        'nao_iniciada' => (AppColors.warningBg, AppColors.warningText),
+        'nao_terminada' => (AppColors.infoBg, AppColors.infoText),
+        _ => (AppColors.borderSubtle, AppColors.textSecondary),
+      };
+
+  @override
+  Widget build(BuildContext context) {
+    final (fundoSelo, textoSelo) = _coresDoTipo;
+
+    // O fundo fica no Material, e não num Container, para o efeito de toque
+    // do ExpansionTile aparecer: um Container por cima o esconderia.
+    return Material(
+      color: Colors.white,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: const BorderSide(color: Color(0xFFE1E6EF)),
+      ),
+      child: ExpansionTile(
+        shape: const Border(),
+        collapsedShape: const Border(),
+        tilePadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+        childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+        expandedAlignment: Alignment.centerLeft,
+        // Wrap: no celular o que não couber desce de linha, sem estourar.
+        title: Wrap(
+          spacing: 10,
+          runSpacing: 6,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            Text(
+              'Linha ${viagem.linha}',
+              style: const TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w800,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: fundoSelo,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                viagem.tipoRotulo,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: textoSelo,
+                ),
+              ),
+            ),
+          ],
+        ),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: 6),
+          child: Wrap(
+            spacing: 14,
+            runSpacing: 4,
+            children: [
+              _resumo(_data),
+              _resumo(
+                '${_horario(viagem.inicioProgramado)} → '
+                '${_horario(viagem.fimProgramado)}',
+              ),
+              _resumo('Sentido ${viagem.sentido}'),
+              _resumo('Tabela ${viagem.tabela}'),
+            ],
+          ),
+        ),
+        children: [
+          Wrap(
+            spacing: 28,
+            runSpacing: 12,
+            children: [
+              _campo('Motorista', viagem.motorista),
+              _campo('Veículo', viagem.prefixo ?? '—'),
+              _campo('Atendimento', viagem.atendimento),
+              _campo('Atividade', viagem.atividade),
+              _campo('Início realizado', _horario(viagem.inicioRealizado)),
+              _campo('Fim realizado', _horario(viagem.fimRealizado)),
+              // Mostrados como vêm: o significado dos códigos ainda é uma
+              // pergunta para a SEMOB.
+              _campo('Status de saída', viagem.statusSaida ?? '—'),
+              _campo('Status de chegada', viagem.statusChegada ?? '—'),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _resumo(String texto) => Text(
+        texto,
+        style: const TextStyle(fontSize: 13, color: AppColors.textSecondary),
+      );
+
+  Widget _campo(String rotulo, String valor) => Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            rotulo,
+            style: const TextStyle(fontSize: 11, color: AppColors.textMuted),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            valor,
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textPrimary,
+            ),
+          ),
+        ],
+      );
 }
 
 /// O que o gráfico desenha. Um null em [valores] é um buraco (dia sem dado),
