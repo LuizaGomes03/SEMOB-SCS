@@ -10,6 +10,7 @@ import '../../core/utils/dia.dart';
 import '../../core/utils/formatters.dart';
 import '../../core/utils/periodo.dart';
 import '../../mock/mock_transporte_data.dart';
+import '../../models/cumprimento.dart';
 import '../../models/indicadores.dart';
 import '../../models/operacao_item.dart';
 import '../../models/por_hora.dart';
@@ -360,6 +361,15 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
         _buildChartSection(config, type),
         const SizedBox(height: 20),
         if (type == InvestigationType.viagens) ...[
+          // 'falhas' na key: esta seção e a de baixo ficam na mesma Column, e
+          // duas irmãs não podem ter keys iguais.
+          _FalhasPorHorarioSection(
+            key: ValueKey(('falhas', _periodo, _linhaEscolhida)),
+            api: widget.api,
+            periodo: _periodo,
+            linha: _linhaEscolhida,
+          ),
+          const SizedBox(height: 20),
           // A key faz o Flutter criar a seção do zero quando o período ou a
           // linha mudam: ela volta para "Todas", página 1, sem limpar nada à mão.
           _ViagensNaoCumpridasSection(
@@ -2052,6 +2062,688 @@ class _ViagemNaoCumpridaCard extends StatelessWidget {
           ),
         ],
       );
+}
+
+/// Abaixo disso, a tela avisa que não dá para concluir um padrão por horário.
+/// É um critério prático, ajustável, e não um valor estatístico.
+const _minimoFalhasParaPadrao = 10;
+
+/// Na ordem do empilhamento, de baixo para cima. As cores são as mesmas famílias
+/// dos selos da lista, na versão forte: os tons de texto dos selos são escuros e
+/// parecidos demais entre si para distinguir pedaços de uma barra.
+final _tiposDeFalha = <({
+  String rotulo,
+  Color cor,
+  int Function(FalhasPorHora) valor,
+})>[
+  (
+    rotulo: 'Não realizadas',
+    cor: AppColors.danger,
+    valor: (f) => f.naoRealizada,
+  ),
+  (
+    rotulo: 'Não iniciadas',
+    cor: AppColors.warning,
+    valor: (f) => f.naoIniciada,
+  ),
+  (
+    rotulo: 'Não terminadas',
+    cor: AppColors.info,
+    valor: (f) => f.naoTerminada,
+  ),
+];
+
+/// Falhas por hora programada de saída e cumprimento por turno.
+class _FalhasPorHorarioSection extends StatefulWidget {
+  final OperacaoApi api;
+  final PeriodoConsulta periodo;
+
+  /// Código da linha ("06"), ou null para todas.
+  final String? linha;
+
+  const _FalhasPorHorarioSection({
+    super.key,
+    required this.api,
+    required this.periodo,
+    this.linha,
+  });
+
+  @override
+  State<_FalhasPorHorarioSection> createState() =>
+      _FalhasPorHorarioSectionState();
+}
+
+class _FalhasPorHorarioSectionState extends State<_FalhasPorHorarioSection> {
+  // Estados separados para as duas rotas: se o cumprimento falhar, o gráfico de
+  // falhas continua na tela, e vice-versa.
+  PorHora? _horas;
+  bool _carregandoHoras = true;
+  String? _erroHoras;
+  int _buscaHoras = 0;
+
+  Cumprimento? _turnos;
+  bool _carregandoTurnos = true;
+  String? _erroTurnos;
+  int _buscaTurnos = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _buscarHoras();
+    // Com linha, nem chama: a rota só tem a cidade inteira.
+    if (widget.linha == null) _buscarTurnos();
+  }
+
+  Future<void> _buscarHoras() async {
+    final busca = ++_buscaHoras;
+
+    try {
+      final resposta = await widget.api.porHora(
+        dataInicio: widget.periodo.inicio,
+        dataFim: widget.periodo.fim,
+        linha: widget.linha,
+      );
+      if (!mounted || busca != _buscaHoras) return;
+
+      setState(() {
+        _horas = resposta;
+        _carregandoHoras = false;
+      });
+    } catch (e) {
+      if (!mounted || busca != _buscaHoras) return;
+
+      setState(() {
+        _erroHoras = e.toString();
+        _carregandoHoras = false;
+      });
+    }
+  }
+
+  Future<void> _buscarTurnos() async {
+    final busca = ++_buscaTurnos;
+
+    try {
+      final resposta = await widget.api.cumprimento(
+        dataInicio: widget.periodo.inicio,
+        dataFim: widget.periodo.fim,
+      );
+      if (!mounted || busca != _buscaTurnos) return;
+
+      setState(() {
+        _turnos = resposta;
+        _carregandoTurnos = false;
+      });
+    } catch (e) {
+      if (!mounted || busca != _buscaTurnos) return;
+
+      setState(() {
+        _erroTurnos = e.toString();
+        _carregandoTurnos = false;
+      });
+    }
+  }
+
+  void _tentarHorasDeNovo() {
+    setState(() {
+      _erroHoras = null;
+      _carregandoHoras = true;
+    });
+    _buscarHoras();
+  }
+
+  void _tentarTurnosDeNovo() {
+    setState(() {
+      _erroTurnos = null;
+      _carregandoTurnos = true;
+    });
+    _buscarTurnos();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(22),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE1E6EF)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Falhas por horário',
+            style: TextStyle(
+              fontSize: 19,
+              fontWeight: FontWeight.w800,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 16),
+          ..._buildFalhas(),
+          const SizedBox(height: 18),
+          const Divider(height: 1, color: Color(0xFFE1E6EF)),
+          const SizedBox(height: 18),
+          const Text(
+            'Cumprimento por turno',
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w800,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 10),
+          ..._buildTurnos(),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _buildFalhas() {
+    if (_carregandoHoras) {
+      return const [
+        Padding(
+          padding: EdgeInsets.symmetric(vertical: 40),
+          child: Center(child: CircularProgressIndicator()),
+        ),
+      ];
+    }
+    if (_erroHoras != null) {
+      return [
+        ErroCarregamento(
+          mensagem: _erroHoras!,
+          onTentarNovamente: _tentarHorasDeNovo,
+        ),
+      ];
+    }
+
+    final horas = _horas!.horas;
+    final totais = [
+      for (final tipo in _tiposDeFalha)
+        horas.fold<int>(0, (soma, h) => soma + tipo.valor(h.falhas)),
+    ];
+    final total = totais.fold<int>(0, (soma, t) => soma + t);
+
+    return [
+      if (total == 0)
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 24),
+          child: Center(
+            child: Text(
+              'Nenhuma falha no período.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 14, color: AppColors.textSecondary),
+            ),
+          ),
+        )
+      else ...[
+        if (total < _minimoFalhasParaPadrao) ...[
+          _avisoPoucasFalhas(total),
+          const SizedBox(height: 14),
+        ],
+        _GraficoFalhas(horas: horas),
+        const SizedBox(height: 12),
+        Wrap(
+          spacing: 16,
+          runSpacing: 6,
+          children: [
+            for (var i = 0; i < _tiposDeFalha.length; i++)
+              _itemLegenda(_tiposDeFalha[i].cor, _tiposDeFalha[i].rotulo,
+                  totais[i]),
+          ],
+        ),
+      ],
+      const SizedBox(height: 12),
+      const Text(
+        'Mostra a quantidade de falhas pela hora programada de saída. Nos '
+        'horários de pico saem mais viagens, então é natural que apareçam mais '
+        'falhas.',
+        style: TextStyle(
+          fontSize: 12,
+          height: 1.45,
+          color: AppColors.textSecondary,
+        ),
+      ),
+    ];
+  }
+
+  Widget _avisoPoucasFalhas(int total) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppColors.warningBg,
+        borderRadius: BorderRadius.circular(9),
+      ),
+      child: Text(
+        'Poucas falhas no período ($total). Não dá para concluir um padrão por '
+        'horário.',
+        style: const TextStyle(fontSize: 13, color: AppColors.warningText),
+      ),
+    );
+  }
+
+  Widget _itemLegenda(Color cor, String rotulo, int total) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 12,
+          height: 12,
+          decoration: BoxDecoration(
+            color: cor,
+            borderRadius: BorderRadius.circular(3),
+          ),
+        ),
+        const SizedBox(width: 6),
+        Text(
+          '$rotulo: ${Formatters.number(total)}',
+          style: const TextStyle(fontSize: 13, color: AppColors.textPrimary),
+        ),
+      ],
+    );
+  }
+
+  List<Widget> _buildTurnos() {
+    // Não mostra o número da cidade ao lado do gráfico da linha: confundiria.
+    if (widget.linha != null) {
+      return const [
+        Text(
+          'O cumprimento por turno só existe para a cidade inteira.',
+          style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
+        ),
+      ];
+    }
+    if (_carregandoTurnos) {
+      return const [
+        Padding(
+          padding: EdgeInsets.symmetric(vertical: 24),
+          child: Center(child: CircularProgressIndicator()),
+        ),
+      ];
+    }
+    if (_erroTurnos != null) {
+      return [
+        ErroCarregamento(
+          mensagem: _erroTurnos!,
+          onTentarNovamente: _tentarTurnosDeNovo,
+        ),
+      ];
+    }
+
+    final turnos = _turnos!;
+
+    return [
+      LayoutBuilder(
+        builder: (context, constraints) {
+          const espaco = 10.0;
+          // Três colunas onde couber; no celular, um bloco embaixo do outro.
+          final largura = constraints.maxWidth >= 600
+              ? (constraints.maxWidth - 2 * espaco) / 3
+              : constraints.maxWidth;
+
+          return Wrap(
+            spacing: espaco,
+            runSpacing: espaco,
+            children: [
+              SizedBox(
+                width: largura,
+                child: _blocoTurno('Manhã', turnos.manha),
+              ),
+              SizedBox(
+                width: largura,
+                child: _blocoTurno('Tarde', turnos.tarde),
+              ),
+              SizedBox(
+                width: largura,
+                child: _blocoTurno('Noite', turnos.noite),
+              ),
+              SizedBox(
+                width: constraints.maxWidth,
+                child: _blocoTurno('Total do período', turnos.total),
+              ),
+            ],
+          );
+        },
+      ),
+      const SizedBox(height: 10),
+      const Text(
+        'Divisão de turnos dos relatórios da SEMOB. Os horários de cada turno '
+        'não foram informados.',
+        style: TextStyle(
+          fontSize: 12,
+          height: 1.45,
+          color: AppColors.textSecondary,
+        ),
+      ),
+    ];
+  }
+
+  Widget _blocoTurno(String nome, CumprimentoTurno turno) {
+    final percentual = turno.percentual;
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE1E6EF)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            nome,
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: AppColors.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            Formatters.cumprimento(turno.realizadas, turno.programadas),
+            style: const TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.w900,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            percentual == null
+                ? 'Sem viagens programadas'
+                : '${Formatters.number(turno.realizadas)} de '
+                    '${Formatters.number(turno.programadas)} programadas',
+            style: const TextStyle(
+              fontSize: 12,
+              color: AppColors.textSecondary,
+            ),
+          ),
+          if (percentual != null) ...[
+            const SizedBox(height: 8),
+            LinearProgressIndicator(
+              value: turno.realizadas / turno.programadas,
+              minHeight: 6,
+              borderRadius: BorderRadius.circular(3),
+              color: AppColors.primary,
+              backgroundColor: const Color(0xFFE9EDF4),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Barras empilhadas de 0h a 23h. Passar o mouse ou tocar mostra os números.
+class _GraficoFalhas extends StatefulWidget {
+  final List<PorHoraItem> horas;
+
+  const _GraficoFalhas({required this.horas});
+
+  @override
+  State<_GraficoFalhas> createState() => _GraficoFalhasState();
+}
+
+class _GraficoFalhasState extends State<_GraficoFalhas> {
+  static const _larguraDica = 170.0;
+
+  /// Posição em [widget.horas] da barra apontada; null: nenhuma.
+  int? _apontada;
+
+  void _apontar(double x, double largura) {
+    final area = largura - _FalhasPainter.margemEsquerda;
+    final coluna = (x - _FalhasPainter.margemEsquerda) / area * widget.horas.length;
+    final nova = coluna < 0
+        ? null
+        : math.min(coluna.floor(), widget.horas.length - 1);
+
+    if (nova != _apontada) setState(() => _apontada = nova);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 240,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final largura = constraints.maxWidth;
+          final apontada = _apontada;
+
+          return Stack(
+            children: [
+              MouseRegion(
+                onHover: (e) => _apontar(e.localPosition.dx, largura),
+                onExit: (_) => setState(() => _apontada = null),
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTapDown: (e) => _apontar(e.localPosition.dx, largura),
+                  child: CustomPaint(
+                    size: Size.infinite,
+                    painter: _FalhasPainter(
+                      horas: widget.horas,
+                      apontada: apontada,
+                    ),
+                  ),
+                ),
+              ),
+              if (apontada != null)
+                Positioned(
+                  top: 0,
+                  left: _posicaoDaDica(apontada, largura),
+                  width: _larguraDica,
+                  // Não pode roubar o mouse: a dica fica por cima do gráfico.
+                  child: IgnorePointer(child: _dica(widget.horas[apontada])),
+                ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  /// Ao lado da barra, para não cobri-la; na metade direita, à esquerda dela.
+  double _posicaoDaDica(int indice, double largura) {
+    final area = largura - _FalhasPainter.margemEsquerda;
+    final coluna = area / widget.horas.length;
+    final centro = _FalhasPainter.margemEsquerda + coluna * (indice + 0.5);
+    final desejada = indice < widget.horas.length / 2
+        ? centro + 12
+        : centro - 12 - _larguraDica;
+
+    return desejada.clamp(0.0, math.max(0.0, largura - _larguraDica));
+  }
+
+  Widget _dica(PorHoraItem hora) {
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(9),
+        border: Border.all(color: const Color(0xFFD9DEE7)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.10),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '${hora.hora}h',
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 4),
+          for (final tipo in _tiposDeFalha)
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Row(
+                children: [
+                  Container(
+                    width: 9,
+                    height: 9,
+                    decoration: BoxDecoration(
+                      color: tipo.cor,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      '${tipo.rotulo}: ${tipo.valor(hora.falhas)}',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Maior múltiplo "redondo" (1, 2, 5, 10, 20...) que divide o eixo em no máximo
+/// 5 faixas. Como é inteiro e o eixo sai de 0, as marcas são sempre inteiras.
+int _passoDoEixo(int maximo) {
+  var base = 1;
+  while (true) {
+    for (final fator in const [1, 2, 5]) {
+      final passo = base * fator;
+      if (maximo / passo <= 5) return passo;
+    }
+    base *= 10;
+  }
+}
+
+class _FalhasPainter extends CustomPainter {
+  static const margemEsquerda = 30.0;
+  static const _margemBaixo = 22.0;
+  static const _margemTopo = 8.0;
+
+  /// Espaço branco entre os pedaços empilhados.
+  static const _vao = 2.0;
+
+  final List<PorHoraItem> horas;
+  final int? apontada;
+
+  const _FalhasPainter({required this.horas, required this.apontada});
+
+  int _totalDa(PorHoraItem h) =>
+      _tiposDeFalha.fold(0, (soma, t) => soma + t.valor(h.falhas));
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final maximo = horas.map(_totalDa).fold(1, math.max);
+    final passo = _passoDoEixo(maximo);
+    final topo = (maximo / passo).ceil() * passo;
+
+    final altura = size.height - _margemBaixo - _margemTopo;
+    final base = _margemTopo + altura;
+    final coluna = (size.width - margemEsquerda) / horas.length;
+    final grade = Paint()
+      ..color = const Color(0xFFEEF1F6)
+      ..strokeWidth = 1;
+
+    for (var v = 0; v <= topo; v += passo) {
+      final y = base - altura * v / topo;
+      canvas.drawLine(Offset(margemEsquerda, y), Offset(size.width, y), grade);
+      _escrever(canvas, '$v', Offset(margemEsquerda - 6, y), alinharDireita: true);
+    }
+
+    for (var i = 0; i < horas.length; i++) {
+      final centro = margemEsquerda + coluna * (i + 0.5);
+
+      if (i == apontada) {
+        canvas.drawRect(
+          Rect.fromLTWH(centro - coluna / 2, _margemTopo, coluna, altura),
+          Paint()..color = AppColors.primary.withValues(alpha: 0.08),
+        );
+      }
+
+      // De 3 em 3 horas: as 24 não caberiam, legíveis, num celular.
+      if (horas[i].hora % 3 == 0) {
+        _escrever(canvas, '${horas[i].hora}h', Offset(centro, base + 12));
+      }
+
+      _desenharBarra(canvas, horas[i], centro, coluna, base, altura / topo);
+    }
+  }
+
+  void _desenharBarra(
+    Canvas canvas,
+    PorHoraItem hora,
+    double centro,
+    double coluna,
+    double base,
+    double alturaPorFalha,
+  ) {
+    final largura = math.min(coluna * 0.72, 24.0);
+    final presentes = [
+      for (final tipo in _tiposDeFalha)
+        if (tipo.valor(hora.falhas) > 0) tipo,
+    ];
+    var y = base;
+
+    for (final tipo in presentes) {
+      final eUltimo = identical(tipo, presentes.last);
+      final cheia = tipo.valor(hora.falhas) * alturaPorFalha;
+      // O vão sai do próprio pedaço: a altura total da barra continua fiel.
+      final desenhada = eUltimo ? cheia : math.max(cheia - _vao, 1.0);
+      final raio = Radius.circular(
+        eUltimo ? math.min(4.0, math.min(largura / 2, desenhada)) : 0,
+      );
+
+      canvas.drawRRect(
+        RRect.fromRectAndCorners(
+          Rect.fromLTWH(centro - largura / 2, y - desenhada, largura, desenhada),
+          topLeft: raio,
+          topRight: raio,
+        ),
+        Paint()..color = tipo.cor,
+      );
+      y -= cheia;
+    }
+  }
+
+  void _escrever(
+    Canvas canvas,
+    String texto,
+    Offset posicao, {
+    bool alinharDireita = false,
+  }) {
+    final pintor = TextPainter(
+      text: TextSpan(
+        text: texto,
+        style: const TextStyle(fontSize: 10, color: AppColors.textSecondary),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+
+    pintor.paint(
+      canvas,
+      Offset(
+        alinharDireita ? posicao.dx - pintor.width : posicao.dx - pintor.width / 2,
+        posicao.dy - pintor.height / 2,
+      ),
+    );
+  }
+
+  @override
+  bool shouldRepaint(_FalhasPainter old) =>
+      old.horas != horas || old.apontada != apontada;
 }
 
 /// O que o gráfico desenha. Um null em [valores] é um buraco (dia sem dado),
