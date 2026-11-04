@@ -1,6 +1,53 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { montarPorLinha } from "../src/services/operacao.service";
+import { montarPorLinha, montarRelatorioDaLinha } from "../src/services/operacao.service";
+
+describe("Cenário: Relatório de uma linha", () => {
+  const dia = new Date("2026-09-10T00:00:00.000Z");
+  const operacao = (id: string, viagens: number, quilometragem = 100) => ({
+    _id: id,
+    inicio: dia,
+    fim: dia,
+    quilometragem,
+    viagens,
+    dias: 1,
+  });
+
+  it("soma as não cumpridas do mesmo período às viagens para dar as programadas", () => {
+    const [item] = montarRelatorioDaLinha([operacao("2026-09-10", 160)], [{ _id: "2026-09-10", total: 2 }]);
+    assert.equal(item.viagens, 160);
+    assert.equal(item.viagensProgramadas, 162);
+  });
+
+  it("não mistura as não cumpridas de um dia com as de outro", () => {
+    const itens = montarRelatorioDaLinha(
+      [operacao("2026-09-09", 10), operacao("2026-09-10", 20)],
+      [{ _id: "2026-09-10", total: 1 }],
+    );
+    assert.equal(itens[0].viagensProgramadas, 10);
+    assert.equal(itens[1].viagensProgramadas, 21);
+  });
+
+  it("devolve passageiros e créditos null, não zero", () => {
+    const [item] = montarRelatorioDaLinha([operacao("2026-09-10", 1)], []);
+    assert.equal(item.passageirosPagantes, null);
+    assert.equal(item.passageirosNaoPagantes, null);
+    assert.equal(item.creditosVendidos, null);
+    assert.equal(item.creditosUtilizados, null);
+    assert.equal(item.diasPassageiros, 0);
+    assert.equal(item.diasFinanceiro, 0);
+  });
+
+  it("arredonda a quilometragem a 1 casa e mantém a ordem recebida", () => {
+    const itens = montarRelatorioDaLinha([operacao("2026-09-09", 1, 10.26), operacao("2026-09-10", 1)], []);
+    assert.equal(itens[0].quilometragem, 10.3);
+    assert.deepEqual(itens.map((i) => i.periodo), ["2026-09-09", "2026-09-10"]);
+  });
+
+  it("linha sem operação no período devolve lista vazia", () => {
+    assert.deepEqual(montarRelatorioDaLinha([], []), []);
+  });
+});
 
 // Só a parte que não depende do MongoDB: juntar a lista de linhas do banco inteiro
 // com o que os aggregates do período devolveriam.
