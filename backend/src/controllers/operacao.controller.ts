@@ -102,6 +102,16 @@ export async function porHora(req: Request, res: Response, next: NextFunction) {
   }
 }
 
+export async function porLinha(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { dataInicio, dataFim } = parseDatas(req);
+    const dados = await operacaoService.getPorLinha({ dataInicio, dataFim });
+    res.json(dados);
+  } catch (err) {
+    next(err);
+  }
+}
+
 export async function cumprimento(req: Request, res: Response, next: NextFunction) {
   try {
     const { dataInicio, dataFim } = parseDatas(req);

@@ -18,6 +18,10 @@ router.get("/ultima-data", operacaoController.ultimaData);
 // GET /api/operacao/por-hora?dataInicio=...&dataFim=...&linha=02
 router.get("/por-hora", operacaoController.porHora);
 
+// GET /api/operacao/por-linha?dataInicio=...&dataFim=...
+// programadas = viagens + não cumpridas: conferido contra resumo_geral em 27/10/2026.
+router.get("/por-linha", operacaoController.porLinha);
+
 // GET /api/operacao/cumprimento?dataInicio=...&dataFim=...
 router.get("/cumprimento", operacaoController.cumprimento);
 

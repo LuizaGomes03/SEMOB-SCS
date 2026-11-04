@@ -3,6 +3,11 @@ import Passageiros from "../models/Passageiros";
 import ResumoLinha from "../models/ResumoLinha";
 import VendaUtilizacao from "../models/VendaUtilizacao";
 import SaldoCreditos from "../models/SaldoCreditos";
+import {
+  ViagemNaoRealizada,
+  ViagemNaoIniciada,
+  ViagemNaoTerminada,
+} from "../models/ViagemNaoCumprida";
 
 interface Periodo {
   dataInicio: Date;
@@ -207,6 +212,101 @@ export async function listarPorLinha({
   }));
 
   return { itens, total, pagina: paginaAtual, limite: porPagina };
+}
+
+const arredondarKm = (valor: number) => Math.round(valor * 10) / 10;
+
+// O que sai dos aggregates, antes de virar a resposta.
+export interface SomaPorLinha {
+  _id: string;
+  quilometragem: number;
+  viagens: number;
+  dias: number;
+}
+
+export interface NaoCumpridasPorLinha {
+  _id: string;
+  total: number;
+}
+
+// Separada do banco para poder ser testada sozinha. Toda linha conhecida entra no
+// resultado, mesmo sem nada no período: é isso que faz a linha 11 aparecer zerada em
+// setembro em vez de sumir. O sort() padrão basta: os códigos têm zero à esquerda.
+export function montarPorLinha(
+  todasLinhas: string[],
+  somas: SomaPorLinha[],
+  naoCumpridas: NaoCumpridasPorLinha[],
+) {
+  const somaDe = new Map(somas.map((s) => [s._id, s]));
+  const falhasDe = new Map(naoCumpridas.map((f) => [f._id, f.total]));
+  const codigos = new Set([...todasLinhas, ...somaDe.keys(), ...falhasDe.keys()]);
+
+  const linhas = [...codigos].sort().map((linha) => {
+    const soma = somaDe.get(linha);
+    const viagens = soma?.viagens ?? 0;
+    const falhas = falhasDe.get(linha) ?? 0;
+
+    return {
+      linha,
+      quilometragem: arredondarKm(soma?.quilometragem ?? 0),
+      viagens,
+      naoCumpridas: falhas,
+      programadas: viagens + falhas,
+      dias: soma?.dias ?? 0,
+    };
+  });
+
+  const viagens = linhas.reduce((total, l) => total + l.viagens, 0);
+  const falhas = linhas.reduce((total, l) => total + l.naoCumpridas, 0);
+
+  return {
+    linhas,
+    totais: {
+      // Soma os valores sem arredondar: somar os arredondados acumularia o erro de cada linha.
+      quilometragem: arredondarKm(somas.reduce((total, s) => total + s.quilometragem, 0)),
+      viagens,
+      naoCumpridas: falhas,
+      programadas: viagens + falhas,
+    },
+  };
+}
+
+export async function getPorLinha({ dataInicio, dataFim }: Periodo) {
+  const periodo = { data: { $gte: dataInicio, $lte: dataFim } };
+
+  // Sem filtro de data de propósito: a lista de linhas não muda conforme o período.
+  const [linhasResumo, linhasRealizada, linhasIniciada, linhasTerminada, somas, naoCumpridas] =
+    await Promise.all([
+      ResumoLinha.distinct("linha"),
+      ViagemNaoRealizada.distinct("linha"),
+      ViagemNaoIniciada.distinct("linha"),
+      ViagemNaoTerminada.distinct("linha"),
+      ResumoLinha.aggregate<SomaPorLinha>([
+        { $match: periodo },
+        {
+          $group: {
+            _id: "$linha",
+            quilometragem: { $sum: "$kmTotal" },
+            viagens: { $sum: "$nrViagens" },
+            // O índice único de dia + linha garante um documento por dia.
+            dias: { $sum: 1 },
+          },
+        },
+      ]),
+      // As três coleções têm o mesmo formato: o banco junta e conta tudo de uma vez.
+      ViagemNaoRealizada.aggregate<NaoCumpridasPorLinha>([
+        { $match: periodo },
+        { $unionWith: { coll: ViagemNaoIniciada.collection.name, pipeline: [{ $match: periodo }] } },
+        { $unionWith: { coll: ViagemNaoTerminada.collection.name, pipeline: [{ $match: periodo }] } },
+        { $group: { _id: "$linha", total: { $sum: 1 } } },
+      ]),
+    ]);
+
+  return montarPorLinha(
+    [...linhasResumo, ...linhasRealizada, ...linhasIniciada, ...linhasTerminada],
+    somas,
+    naoCumpridas,
+  );
 }
 
 export async function getSaldo({
