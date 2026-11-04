@@ -13,6 +13,7 @@ import '../../mock/mock_transporte_data.dart';
 import '../../models/indicadores.dart';
 import '../../models/operacao_item.dart';
 import '../../models/por_hora.dart';
+import '../../models/por_linha.dart';
 import '../../models/relatorio_item.dart';
 import '../../models/viagem_nao_cumprida.dart';
 import '../../services/operacao_api.dart';
@@ -82,12 +83,23 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
   /// null: período de um dia num indicador que a SEMOB não envia por hora.
   Future<_SerieGrafico>? _serie;
 
+  // Ficam aqui, e não num widget próprio, porque o bloco por linha e o seletor
+  // de linha usam os mesmos dados. _porLinha continua preenchido durante uma
+  // nova busca: as linhas não mudam com o período, e o seletor segue funcionando.
+  PorLinha? _porLinha;
+  bool _carregandoPorLinha = false;
+  String? _erroPorLinha;
+
+  /// Identifica a busca mais recente. Uma resposta com número menor é velha.
+  int _buscaPorLinha = 0;
+
   @override
   void initState() {
     super.initState();
     _usarPeriodoDoDashboard();
     _buscar();
     _buscarSerie();
+    _buscarPorLinha();
   }
 
   @override
@@ -100,6 +112,7 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
     // A série também depende do indicador (qual métrica, se há dado por hora).
     if (oldWidget.periodo != widget.periodo || oldWidget.type != widget.type) {
       _buscarSerie();
+      _buscarPorLinha();
     }
   }
 
@@ -127,8 +140,45 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
         _periodo = novo;
         _buscar();
         _buscarSerie();
+        _buscarPorLinha();
       }
     });
+  }
+
+  /// Passageiros, gratuidades e financeiro não vêm por linha.
+  bool get _temPorLinha =>
+      _type == InvestigationType.quilometragem ||
+      _type == InvestigationType.viagens;
+
+  // Não chama setState, igual a _buscar e _buscarSerie: quem chama decide. O
+  // setState não aceita função async, por isso a espera fica em outro método.
+  void _buscarPorLinha() {
+    if (!_temPorLinha) return;
+    _carregandoPorLinha = true;
+    _erroPorLinha = null;
+    _aguardarPorLinha(++_buscaPorLinha);
+  }
+
+  Future<void> _aguardarPorLinha(int busca) async {
+    try {
+      final resposta = await widget.api.porLinha(
+        dataInicio: _periodo.inicio,
+        dataFim: _periodo.fim,
+      );
+      if (!mounted || busca != _buscaPorLinha) return;
+
+      setState(() {
+        _porLinha = resposta;
+        _carregandoPorLinha = false;
+      });
+    } catch (e) {
+      if (!mounted || busca != _buscaPorLinha) return;
+
+      setState(() {
+        _erroPorLinha = e.toString();
+        _carregandoPorLinha = false;
+      });
+    }
   }
 
   // Mesma chamada do dashboard: o número grande daqui bate com o do cartão.
@@ -312,7 +362,7 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
             _buildPassengerComposition(dados),
             const SizedBox(height: 20),
           ],
-        _buildByLine(type),
+        if (_temPorLinha) _buildByLine(type),
       ],
     );
   }
@@ -405,8 +455,9 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
               selected: _dayFilter == 'Dia útil'),
           _filter('Não útil', Icons.weekend_outlined,
               selected: _dayFilter == 'Não útil'),
-          _filter(_lineFilter, Icons.directions_bus_outlined,
-              selected: _lineFilter != 'Todas as linhas'),
+          if (_temPorLinha)
+            _filter(_lineFilter, Icons.directions_bus_outlined,
+                selected: _lineFilter != 'Todas as linhas'),
         ],
       ),
     );
@@ -491,9 +542,12 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
   }
 
   Future<void> _showLinePicker() async {
+    // "Linha 06", e não só "06": o rótulo vira o texto do botão, e _handleFilter
+    // reconhece o botão de linha por esse começo.
+    final linhas = _porLinha?.linhas;
     final lines = <String>[
       'Todas as linhas',
-      ...MockTransporteData.operacoes.map((e) => e.lineCode),
+      ...?linhas?.map((l) => 'Linha ${l.linha}'),
     ];
 
     final selected = await showModalBottomSheet<String>(
@@ -520,6 +574,16 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
                   onTap: () => Navigator.pop(context, line),
                 ),
               ),
+              // A lista vem da rota: pode ainda não ter chegado, ou ter falhado.
+              if (linhas == null)
+                ListTile(
+                  enabled: false,
+                  title: Text(
+                    _erroPorLinha == null
+                        ? 'Carregando as linhas…'
+                        : 'Não foi possível carregar as linhas.',
+                  ),
+                ),
             ],
           ),
         );
@@ -1080,12 +1144,6 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
   }
 
   Widget _buildByLine(InvestigationType type) {
-    var rows = MockTransporteData.operacoes;
-
-    if (_lineFilter != 'Todas as linhas') {
-      rows = rows.where((row) => row.lineCode == _lineFilter).toList();
-    }
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1105,38 +1163,86 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
             borderRadius: BorderRadius.circular(16),
             border: Border.all(color: const Color(0xFFE1E6EF)),
           ),
-          child: Column(
-            children: [
-              for (int i = 0; i < rows.length; i++)
-                _buildLineRow(
-                  rows[i],
-                  type,
-                  i == rows.length - 1,
-                ),
-            ],
-          ),
+          child: _buildCorpoPorLinha(type),
         ),
       ],
     );
   }
 
+  Widget _buildCorpoPorLinha(InvestigationType type) {
+    if (_carregandoPorLinha) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 40),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (_erroPorLinha != null) {
+      return ErroCarregamento(
+        mensagem: _erroPorLinha!,
+        onTentarNovamente: () => setState(_buscarPorLinha),
+      );
+    }
+
+    final dados = _porLinha;
+    if (dados == null || dados.linhas.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 24),
+        child: Center(
+          child: Text(
+            'Nenhuma linha encontrada.',
+            style: TextStyle(fontSize: 14, color: AppColors.textSecondary),
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        for (int i = 0; i < dados.linhas.length; i++)
+          _buildLineRow(
+            dados.linhas[i],
+            dados.totais,
+            type,
+            i == dados.linhas.length - 1,
+          ),
+      ],
+    );
+  }
+
+  /// barra null: a linha não rodou no período, então não há barra.
+  ({String texto, double? barra}) _resumoDaLinha(
+    PorLinhaItem linha,
+    PorLinhaTotais totais,
+    InvestigationType type,
+  ) {
+    const naoRodou = (texto: 'Não rodou no período', barra: null);
+
+    if (type == InvestigationType.viagens) {
+      if (linha.programadas == 0) return naoRodou;
+      return (
+        texto: '${Formatters.number(linha.viagens)} de '
+            '${Formatters.number(linha.programadas)} programadas',
+        barra: linha.viagens / linha.programadas,
+      );
+    }
+
+    // Km > 0 aqui garante total > 0: a divisão é segura.
+    if (linha.quilometragem == 0) return naoRodou;
+    final parte = linha.quilometragem / totais.quilometragem;
+    return (
+      texto: '${Formatters.number(linha.quilometragem)} km · '
+          '${Formatters.percentage(parte * 100, showSign: false)} do total',
+      barra: parte.toDouble(),
+    );
+  }
+
   Widget _buildLineRow(
-    OperacaoItem row,
+    PorLinhaItem linha,
+    PorLinhaTotais totais,
     InvestigationType type,
     bool isLast,
   ) {
-    final isCritical = row.status.toLowerCase() == 'crítico';
-    final value = switch (type) {
-      InvestigationType.quilometragem => '${Formatters.number(row.km)} km',
-      InvestigationType.viagens =>
-        '${row.viagens}/${row.viagensProgramadas}',
-      InvestigationType.pagantes => Formatters.number(row.pagantes),
-      InvestigationType.gratuidades => Formatters.number(row.naoPagantes),
-      InvestigationType.financeiro =>
-        'R\$ ${row.financeiro.toStringAsFixed(2)}',
-      InvestigationType.operacaoLinhas =>
-        '${row.viagens}/${row.viagensProgramadas}',
-    };
+    final (:texto, :barra) = _resumoDaLinha(linha, totais, type);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
@@ -1147,63 +1253,44 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
                 bottom: BorderSide(color: Colors.grey.shade200),
               ),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 44,
-            height: 44,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: AppColors.primary.withValues(alpha: 0.08),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Text(
-              row.lineCode,
-              style: const TextStyle(
-                fontWeight: FontWeight.w800,
-                color: AppColors.primary,
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Linha ${linha.linha}',
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textPrimary,
+                ),
               ),
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  row.lineName,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textPrimary,
+              const SizedBox(width: 12),
+              // Expanded: no celular o texto quebra em vez de estourar a linha.
+              Expanded(
+                child: Text(
+                  texto,
+                  textAlign: TextAlign.end,
+                  style: TextStyle(
+                    fontWeight:
+                        barra == null ? FontWeight.w400 : FontWeight.w800,
+                    color: barra == null
+                        ? AppColors.textSecondary
+                        : AppColors.textPrimary,
                   ),
                 ),
-                const SizedBox(height: 3),
-                Text(
-                  row.statusDesc,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 11,
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
-          const SizedBox(width: 12),
-          Text(
-            value,
-            style: const TextStyle(
-              fontWeight: FontWeight.w800,
-              color: AppColors.textPrimary,
-            ),
-          ),
-          if (isCritical) ...[
-            const SizedBox(width: 12),
-            const Icon(
-              Icons.warning_amber_rounded,
-              color: Colors.red,
-              size: 21,
+          if (barra != null) ...[
+            const SizedBox(height: 8),
+            LinearProgressIndicator(
+              value: barra,
+              minHeight: 6,
+              borderRadius: BorderRadius.circular(3),
+              color: AppColors.primary,
+              backgroundColor: const Color(0xFFE9EDF4),
             ),
           ],
         ],
