@@ -9,6 +9,7 @@ import '../models/indicadores.dart';
 import '../models/por_hora.dart';
 import '../models/ultima_data.dart';
 import '../models/relatorio_item.dart';
+import '../models/viagem_nao_cumprida.dart';
 
 class ApiException implements Exception {
   final String mensagem;
@@ -110,5 +111,27 @@ class OperacaoApi {
     }) as Map<String, dynamic>;
 
     return PorHora.fromJson(corpo);
+  }
+
+  /// tipo: 'nao_realizada', 'nao_iniciada' ou 'nao_terminada'. Sem ele, todos.
+  /// linha: código exato da linha ("02"). Sem ela, todas.
+  Future<ViagensNaoCumpridas> viagensNaoCumpridas({
+    required DateTime dataInicio,
+    required DateTime dataFim,
+    String? tipo,
+    String? linha,
+    int pagina = 1,
+    int limite = 20,
+  }) async {
+    final corpo = await _get('/anomalias', {
+      'dataInicio': formatarDia(dataInicio),
+      'dataFim': formatarDia(dataFim),
+      'tipo': ?tipo,
+      'linha': ?linha,
+      'pagina': pagina.toString(),
+      'limite': limite.toString(),
+    }) as Map<String, dynamic>;
+
+    return ViagensNaoCumpridas.fromJson(corpo);
   }
 }
