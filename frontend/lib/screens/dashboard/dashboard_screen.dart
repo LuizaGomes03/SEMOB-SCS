@@ -19,7 +19,6 @@ class DashboardScreen extends StatefulWidget {
   final int versaoDados;
   final bool isRefreshing;
   final ValueChanged<InvestigationType> onOpenInvestigation;
-  final Function(dynamic) onSelectAlert;
 
   const DashboardScreen({
     super.key,
@@ -28,7 +27,6 @@ class DashboardScreen extends StatefulWidget {
     required this.versaoDados,
     required this.isRefreshing,
     required this.onOpenInvestigation,
-    required this.onSelectAlert,
   });
 
   @override

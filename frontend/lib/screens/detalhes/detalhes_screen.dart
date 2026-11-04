@@ -9,10 +9,8 @@ import '../../core/constants/app_colors.dart';
 import '../../core/utils/dia.dart';
 import '../../core/utils/formatters.dart';
 import '../../core/utils/periodo.dart';
-import '../../mock/mock_transporte_data.dart';
 import '../../models/cumprimento.dart';
 import '../../models/indicadores.dart';
-import '../../models/operacao_item.dart';
 import '../../models/por_hora.dart';
 import '../../models/por_linha.dart';
 import '../../models/relatorio_item.dart';
@@ -26,7 +24,6 @@ enum InvestigationType {
   pagantes,
   gratuidades,
   financeiro,
-  operacaoLinhas,
 }
 
 enum _ChartType {
@@ -42,7 +39,6 @@ class DetalhesScreen extends StatefulWidget {
   final DateTime ultimaData;
   final String botaoInicial;
   final DateTimeRange? customRange;
-  final OperacaoItem? item;
   final InvestigationType? type;
   final VoidCallback onBack;
 
@@ -53,7 +49,6 @@ class DetalhesScreen extends StatefulWidget {
     required this.ultimaData,
     required this.botaoInicial,
     this.customRange,
-    this.item,
     this.type,
     required this.onBack,
   });
@@ -206,9 +201,7 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
     final type = _type;
     final linha = _linhaEscolhida;
 
-    if (type == InvestigationType.operacaoLinhas) {
-      _serie = null;
-    } else if (inicio == fim) {
+    if (inicio == fim) {
       final temPorHora = type == InvestigationType.quilometragem ||
           type == InvestigationType.viagens;
       _serie = temPorHora
@@ -284,21 +277,12 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
       InvestigationType.gratuidades => item.passageirosNaoPagantes,
       // Provisório, igual ao cartão: créditos vendidos.
       InvestigationType.financeiro => item.creditosVendidos,
-      InvestigationType.operacaoLinhas => null,
     };
   }
 
   @override
   Widget build(BuildContext context) {
-    if (widget.item != null) {
-      return _buildOperationDetail(context, widget.item!);
-    }
-
     final type = widget.type ?? InvestigationType.quilometragem;
-
-    if (type == InvestigationType.operacaoLinhas) {
-      return _buildLineOperationsInvestigation(context);
-    }
 
     final config = _getConfig(type);
 
@@ -714,10 +698,6 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
             'em créditos vendidos · ${Formatters.currency(dados.creditosUtilizados)} utilizados',
         semDados: dados.diasFinanceiro == 0,
       ),
-      // build() desvia operacaoLinhas para outra tela antes de chegar aqui.
-      InvestigationType.operacaoLinhas => throw StateError(
-        'Operação das linhas não tem número principal.',
-      ),
     };
   }
 
@@ -926,8 +906,6 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
           _ChartType.linha,
           _ChartType.barras,
         ];
-      case InvestigationType.operacaoLinhas:
-        return const [_ChartType.automatico, _ChartType.barras];
     }
   }
 
@@ -939,8 +917,6 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
       case InvestigationType.pagantes:
       case InvestigationType.gratuidades:
         return _ChartType.linha;
-      case InvestigationType.operacaoLinhas:
-        return _ChartType.barras;
     }
   }
 
@@ -1102,111 +1078,6 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
           style: const TextStyle(fontWeight: FontWeight.w800),
         ),
       ],
-    );
-  }
-
-  Widget _buildLineOperationsInvestigation(BuildContext context) {
-    final rows = MockTransporteData.operacoes.take(10).toList();
-
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final padding = constraints.maxWidth < 700 ? 16.0 : 30.0;
-        final twoColumns = constraints.maxWidth >= 900;
-        final itemWidth = twoColumns
-            ? (constraints.maxWidth - 12) / 2
-            : constraints.maxWidth;
-
-        return SingleChildScrollView(
-          padding: EdgeInsets.fromLTRB(padding, 24, padding, 40),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              OutlinedButton.icon(
-                onPressed: widget.onBack,
-                icon: const Icon(Icons.arrow_back_rounded, size: 18),
-                label: const Text('Voltar ao Dashboard'),
-              ),
-              const SizedBox(height: 22),
-              Row(
-                children: [
-                  Container(
-                    width: 54,
-                    height: 54,
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withValues(alpha: 0.10),
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: const Icon(
-                      Icons.directions_bus_filled_outlined,
-                      color: AppColors.primary,
-                      size: 28,
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  const Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Operação das linhas',
-                          style: TextStyle(
-                            fontSize: 26,
-                            fontWeight: FontWeight.w900,
-                            color: AppColors.textPrimary,
-                          ),
-                        ),
-                        SizedBox(height: 4),
-                        Text(
-                          'As 10 linhas do sistema: viagens programadas × realizadas.',
-                          style: TextStyle(color: AppColors.textSecondary),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 18),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF4F7FB),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFFDDE4EF)),
-                ),
-                child: const Row(
-                  children: [
-                    Icon(Icons.info_outline, color: AppColors.primary, size: 20),
-                    SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        'O mock atual possui totais de viagens por linha. Ele ainda não possui os horários de cada viagem; por isso, esta tela verifica a execução total programada, sem inventar cumprimento horário.',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: AppColors.textSecondary,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 18),
-              Wrap(
-                spacing: 12,
-                runSpacing: 12,
-                children: rows
-                    .map(
-                      (row) => SizedBox(
-                        width: itemWidth,
-                        child: _LineInvestigationCard(row: row),
-                      ),
-                    )
-                    .toList(),
-              ),
-            ],
-          ),
-        );
-      },
     );
   }
 
@@ -1378,91 +1249,6 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
     );
   }
 
-  Widget _buildOperationDetail(
-    BuildContext context,
-    OperacaoItem row,
-  ) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Align(
-            alignment: Alignment.centerLeft,
-            child: OutlinedButton.icon(
-              onPressed: widget.onBack,
-              icon: const Icon(Icons.arrow_back_rounded, size: 17),
-              label: const Text('Voltar'),
-            ),
-          ),
-          const SizedBox(height: 20),
-          Text(
-            'Detalhamento: ${row.lineName}',
-            style: const TextStyle(
-              fontSize: 28,
-              fontWeight: FontWeight.w800,
-              color: AppColors.textPrimary,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            row.statusDesc,
-            style: const TextStyle(
-              fontSize: 14,
-              color: AppColors.textSecondary,
-            ),
-          ),
-          const SizedBox(height: 24),
-          Wrap(
-            spacing: 14,
-            runSpacing: 14,
-            children: [
-              _metric('Quilometragem', '${Formatters.number(row.km)} km', Icons.route),
-              _metric('Viagens', '${row.viagens}/${row.viagensProgramadas}', Icons.directions_bus),
-              _metric('Pagantes', Formatters.number(row.pagantes), Icons.people),
-              _metric('Não pagantes', Formatters.number(row.naoPagantes), Icons.card_membership),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _metric(String title, String value, IconData icon) {
-    return Container(
-      width: 250,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(15),
-        border: Border.all(color: const Color(0xFFE1E6EF)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, color: AppColors.primary),
-          const SizedBox(height: 14),
-          Text(
-            title,
-            style: const TextStyle(
-              fontSize: 13,
-              color: AppColors.textSecondary,
-            ),
-          ),
-          const SizedBox(height: 5),
-          Text(
-            value,
-            style: const TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.w800,
-              color: AppColors.textPrimary,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   _InvestigationConfig _getConfig(InvestigationType type) {
     switch (type) {
       case InvestigationType.quilometragem:
@@ -1515,149 +1301,7 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
           analysisDescription:
               'Compare a arrecadação ao longo do período operacional.',
         );
-      case InvestigationType.operacaoLinhas:
-        return const _InvestigationConfig(
-          title: 'Operação das linhas',
-          description: 'Compare as 10 linhas do sistema pelo programado e realizado.',
-          icon: Icons.directions_bus_filled_outlined,
-          analysisTitle: 'Programado × realizado',
-          analysisDescription: 'Verifique quais linhas cumpriram, fizeram menos ou fizeram mais viagens.',
-        );
     }
-  }
-}
-
-
-class _LineInvestigationCard extends StatelessWidget {
-  final OperacaoItem row;
-
-  const _LineInvestigationCard({required this.row});
-
-  @override
-  Widget build(BuildContext context) {
-    final planned = row.viagensProgramadas;
-    final actual = row.viagens;
-    final difference = actual - planned;
-    final percent = planned <= 0 ? 0.0 : (difference.abs() / planned) * 100;
-
-    final color = difference == 0
-        ? Colors.green
-        : percent <= 5
-            ? Colors.orange
-            : Colors.red;
-
-    final status = difference == 0
-        ? 'No programado'
-        : difference > 0
-            ? '+$difference acima do programado'
-            : '$difference abaixo do programado';
-
-    final progress = planned <= 0
-        ? 0.0
-        : (actual / planned).clamp(0.0, 1.0);
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: color.withValues(alpha: 0.28)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x08000000),
-            blurRadius: 10,
-            offset: Offset(0, 3),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 42,
-                height: 42,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withValues(alpha: 0.09),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Text(
-                  row.lineCode,
-                  style: const TextStyle(
-                    color: AppColors.primary,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  row.lineName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-              ),
-              Text(
-                '$actual / $planned',
-                style: TextStyle(
-                  color: color,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 13),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(5),
-            child: LinearProgressIndicator(
-              minHeight: 8,
-              value: progress,
-              backgroundColor: const Color(0xFFE7EBF2),
-              valueColor: AlwaysStoppedAnimation<Color>(color),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Icon(
-                difference == 0
-                    ? Icons.check_circle_outline
-                    : difference > 0
-                        ? Icons.trending_up
-                        : Icons.trending_down,
-                color: color,
-                size: 17,
-              ),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  status,
-                  style: TextStyle(
-                    color: color,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 7),
-          Text(
-            'Programadas: $planned  •  Realizadas: $actual',
-            style: const TextStyle(
-              fontSize: 11,
-              color: AppColors.textSecondary,
-            ),
-          ),
-        ],
-      ),
-    );
   }
 }
 

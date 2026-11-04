@@ -295,7 +295,6 @@ class _SemobAppState extends State<SemobApp> {
                       ultimaData: _ultimaData!,
                       botaoInicial: _selectedPeriod,
                       customRange: _customRange,
-                      item: null,
                       type: _selectedInvestigationType,
                       onBack: _backToDashboard,
                     )
@@ -390,7 +389,6 @@ class _SemobAppState extends State<SemobApp> {
       versaoDados: _versaoDados,
       isRefreshing: _isRefreshing,
       onOpenInvestigation: _openInvestigation,
-      onSelectAlert: (_) {},
     );
   }
 
