@@ -59,21 +59,14 @@ String _data(DateTime d) => '${_diaMes(d)}/${d.year}';
 String _hora(DateTime? d) =>
     d == null ? _traco : '${_doisDigitos(d.hour)}:${_doisDigitos(d.minute)}';
 
-String _percentual(double? valor) => valor == null
-    ? _traco
-    : Formatters.percentage(valor, showSign: false);
+String _cumprimento(int realizadas, int programadas) =>
+    Formatters.cumprimento(realizadas, programadas, semValor: _traco);
 
 /// Sinal explícito: numa variação, "+" diz tanto quanto o número.
 String _variacaoEmReais(num? valor) {
   if (valor == null) return _traco;
   return '${valor > 0 ? '+' : ''}${Formatters.currency(valor)}';
 }
-
-String _sentido(String codigo) => switch (codigo) {
-      'I' => 'Ida',
-      'V' => 'Volta',
-      _ => codigo,
-    };
 
 /// Monta o PDF só com o que já foi buscado: nenhuma chamada de rede aqui.
 Future<Uint8List> gerarRelatorioPdf({
@@ -83,13 +76,16 @@ Future<Uint8List> gerarRelatorioPdf({
   required PeriodoConsulta periodo,
   required DateTime ultimaData,
   required String titulo,
-  required String dataReferencia,
   required DateTime geradoEm,
 }) {
   final pdf = pw.Document();
   final rodape = 'Gerado em ${_data(geradoEm)} ${_hora(geradoEm)} · '
       'Fonte: relatórios da SEMOB';
-  final notas = _notasDoPeriodo(periodo, ultimaData);
+  final notas = [
+    // Só faz sentido junto da tabela que tem a coluna "Km produtivo".
+    if (secoes.contains(SecaoRelatorio.operacaoPorLinha)) avisoKmPorLinha,
+    ..._notasDoPeriodo(periodo, ultimaData),
+  ];
 
   pdf.addPage(
     pw.MultiPage(
@@ -109,7 +105,7 @@ Future<Uint8List> gerarRelatorioPdf({
         ),
       ),
       build: (context) => [
-        _cabecalho(dados.logo, titulo, periodo, dataReferencia),
+        _cabecalho(dados.logo, titulo, periodo, ultimaData),
         if (secoes.contains(SecaoRelatorio.indicadores))
           _inteira(_secaoIndicadores(dados)),
         if (secoes.contains(SecaoRelatorio.operacaoPorLinha))
@@ -157,7 +153,7 @@ pw.Widget _cabecalho(
   pw.ImageProvider logo,
   String titulo,
   PeriodoConsulta periodo,
-  String dataReferencia,
+  DateTime ultimaData,
 ) {
   return pw.Container(
     padding: const pw.EdgeInsets.only(bottom: 12),
@@ -194,7 +190,12 @@ pw.Widget _cabecalho(
                 'Período: ${rotuloPeriodo(periodo.inicio, periodo.fim)}',
                 style: const pw.TextStyle(fontSize: 10),
               ),
-              pw.Text(dataReferencia, style: const pw.TextStyle(fontSize: 10)),
+              // Com o ano, ao contrário do selo do dashboard: um PDF pode ser
+              // lido muito depois, fora do contexto do app.
+              pw.Text(
+                'Dados de referência: ${_data(ultimaData)}',
+                style: const pw.TextStyle(fontSize: 10),
+              ),
             ],
           ),
         ),
@@ -335,7 +336,7 @@ List<pw.Widget> _secaoIndicadores(DadosRelatorio dados) {
     _textoDe(
       '${Formatters.number(total.realizadas)} de '
       '${Formatters.number(total.programadas)} viagens programadas realizadas '
-      '(${_percentual(total.percentual)})',
+      '(${_cumprimento(total.realizadas, total.programadas)})',
     ),
   ];
 }
@@ -359,14 +360,17 @@ String _textoVariacao(double? variacao, ComparacaoIndicadores? comparacao) {
 const _largurasOperacao = [2, 2, 2, 2, 2, 2];
 
 List<pw.Widget> _secaoOperacao(PorLinha dados) {
-  String cumprimento(int viagens, int programadas) => programadas == 0
-      ? _traco
-      : Formatters.percentage(viagens / programadas * 100, showSign: false);
-
   return [
     _tituloSecao('Operação por linha'),
     _linhaOperacao(
-      const ['Linha', 'Viagens', 'Programadas', 'Não cumpridas', 'Cumprimento', 'Km'],
+      const [
+        'Linha',
+        'Viagens',
+        'Programadas',
+        'Não cumpridas',
+        'Cumprimento',
+        'Km produtivo',
+      ],
       cabecalho: true,
     ),
     for (final l in dados.linhas)
@@ -378,7 +382,7 @@ List<pw.Widget> _secaoOperacao(PorLinha dados) {
           Formatters.number(l.viagens),
           Formatters.number(l.programadas),
           Formatters.number(l.naoCumpridas),
-          cumprimento(l.viagens, l.programadas),
+          _cumprimento(l.viagens, l.programadas),
           Formatters.number(l.quilometragem),
         ]),
     _linhaOperacao([
@@ -386,7 +390,7 @@ List<pw.Widget> _secaoOperacao(PorLinha dados) {
       Formatters.number(dados.totais.viagens),
       Formatters.number(dados.totais.programadas),
       Formatters.number(dados.totais.naoCumpridas),
-      cumprimento(dados.totais.viagens, dados.totais.programadas),
+      _cumprimento(dados.totais.viagens, dados.totais.programadas),
       Formatters.number(dados.totais.quilometragem),
     ], negrito: true),
   ];
@@ -464,7 +468,7 @@ List<pw.Widget> _secaoTurnos(Cumprimento c) {
         nome,
         Formatters.number(t.programadas),
         Formatters.number(t.realizadas),
-        _percentual(t.percentual),
+        _cumprimento(t.realizadas, t.programadas),
       ];
 
   return [
@@ -582,7 +586,7 @@ List<pw.Widget> _secaoViagens(List<ViagemNaoCumprida> viagens) {
               _data(v.data),
               v.linha,
               v.tabela,
-              _sentido(v.sentido),
+              rotuloSentido(v.sentido),
               // Hífen: a fonte padrão não tem seta nem traço meio.
               '${_hora(v.inicioProgramado)} - ${_hora(v.fimProgramado)}',
               v.tipoRotulo,

@@ -12,6 +12,14 @@ DateTime? _horarioSaoPaulo(dynamic valor) => valor == null
         .toUtc()
         .subtract(const Duration(hours: 3));
 
+/// "Ida" ou "Volta". Um código desconhecido aparece como vem, em vez de virar um
+/// sentido errado. A tela e o PDF usam esta mesma função para não divergirem.
+String rotuloSentido(String codigo) => switch (codigo) {
+      'I' => 'Ida',
+      'V' => 'Volta',
+      _ => codigo,
+    };
+
 class ViagemNaoCumprida {
   /// Dia da operação. Uma viagem de 23:55 pode terminar no dia seguinte.
   final DateTime data;

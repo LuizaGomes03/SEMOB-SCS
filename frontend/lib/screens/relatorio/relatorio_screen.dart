@@ -190,7 +190,6 @@ class _RelatorioScreenState extends State<RelatorioScreen> {
       periodo: widget.periodo,
       ultimaData: widget.ultimaData,
       titulo: _reportTitle,
-      dataReferencia: widget.dataReferenceLabel,
       geradoEm: DateTime.now(),
     );
   }

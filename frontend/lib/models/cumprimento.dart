@@ -1,3 +1,5 @@
+import '../core/utils/formatters.dart';
+
 class Cumprimento {
   final CumprimentoTurno manha;
   final CumprimentoTurno tarde;
@@ -34,6 +36,7 @@ class CumprimentoTurno {
   final int realizadas;
 
   /// null quando programadas é 0: sem viagem programada não existe cumprimento.
+  /// Calculado aqui, e não lido da API, porque a rota manda o valor arredondado.
   final double? percentual;
 
   const CumprimentoTurno({
@@ -43,10 +46,13 @@ class CumprimentoTurno {
   });
 
   factory CumprimentoTurno.fromJson(Map<String, dynamic> json) {
+    final programadas = (json['programadas'] as num).toInt();
+    final realizadas = (json['realizadas'] as num).toInt();
+
     return CumprimentoTurno(
-      programadas: (json['programadas'] as num).toInt(),
-      realizadas: (json['realizadas'] as num).toInt(),
-      percentual: (json['percentual'] as num?)?.toDouble(),
+      programadas: programadas,
+      realizadas: realizadas,
+      percentual: Formatters.percentualCortado(realizadas, programadas),
     );
   }
 }

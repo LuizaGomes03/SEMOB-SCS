@@ -1,3 +1,8 @@
+/// Explica por que a soma das linhas fica abaixo do total dos indicadores. Numa
+/// constante só: a tela e o PDF precisam dizer exatamente a mesma coisa.
+const avisoKmPorLinha = 'O km por linha não inclui o km improdutivo (sem '
+    'passageiros), que não é informado por linha.';
+
 class PorLinha {
   /// Todas as linhas do banco, em ordem de código. Quem não rodou no período
   /// vem com tudo zero.

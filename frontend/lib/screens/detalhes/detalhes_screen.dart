@@ -1224,6 +1224,13 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
           ),
           child: _buildCorpoPorLinha(type),
         ),
+        if (type == InvestigationType.quilometragem) ...[
+          const SizedBox(height: 8),
+          const Text(
+            avisoKmPorLinha,
+            style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+          ),
+        ],
       ],
     );
   }
@@ -1994,7 +2001,7 @@ class _ViagemNaoCumpridaCard extends StatelessWidget {
                 '${_horario(viagem.inicioProgramado)} → '
                 '${_horario(viagem.fimProgramado)}',
               ),
-              _resumo('Sentido ${viagem.sentido}'),
+              _resumo('Sentido: ${rotuloSentido(viagem.sentido)}'),
               _resumo('Tabela ${viagem.tabela}'),
             ],
           ),
