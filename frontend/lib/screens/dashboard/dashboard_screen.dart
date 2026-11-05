@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 
 import '../../core/constants/app_colors.dart';
+import '../../core/utils/feriados.dart';
 import '../../core/utils/formatters.dart';
 import '../../core/utils/periodo.dart';
 import '../../models/indicadores.dart';
 import '../../services/operacao_api.dart';
+import '../../widgets/common/aviso_feriado.dart';
 import '../../widgets/common/erro_carregamento.dart';
 import '../detalhes/detalhes_screen.dart';
 
@@ -198,6 +200,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     final rotuloComparacao = _rotuloComparacao(dados.comparacao);
 
+    // Aqui, fora dos cartões: a conta é a mesma para os cinco.
+    final comparacao = dados.comparacao;
+    final avisoPeriodo = _avisoFeriados(
+      'O período',
+      feriadosNoPeriodo(widget.periodo.inicio, widget.periodo.fim),
+    );
+    final avisoComparacao = comparacao == null
+        ? null
+        : _avisoFeriados(
+            'A comparação',
+            feriadosNoPeriodo(comparacao.dataInicio, comparacao.dataFim),
+          );
+
     return LayoutBuilder(
       builder: (context, viewport) {
         final width = viewport.maxWidth;
@@ -261,6 +276,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   child: _buildKpiCard(
                     card,
                     rotuloComparacao,
+                    avisoPeriodo: avisoPeriodo,
+                    avisoComparacao: avisoComparacao,
                     altura: cardHeight,
                     largura: cardWidth,
                   ),
@@ -330,6 +347,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget _buildKpiCard(
     _DashboardKpi item,
     String rotuloComparacao, {
+    required String? avisoPeriodo,
+    required String? avisoComparacao,
     required double altura,
     required double largura,
   }) {
@@ -344,6 +363,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final detailSize = (altura * 0.06).clamp(13.0, 19.0);
     final variationSize = (altura * 0.12).clamp(18.0, 40.0);
     final comparacaoSize = (variationSize * 0.55).clamp(13.0, 22.0);
+    final avisoSize = (altura * 0.055).clamp(11.0, 14.0);
+
+    // Sem variação não há comparação para explicar. O aviso do período continua:
+    // ele fala do número do cartão, não da variação.
+    final avisos = [
+      ?avisoPeriodo,
+      if (variacao != null) ?avisoComparacao,
+    ];
 
     // Variação: verde quando positiva, vermelha quando negativa.
     final corVariacao =
@@ -453,7 +480,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     fontWeight: FontWeight.w400,
                   ),
                 ),
-                const Spacer(),
+                // O aviso usa só o espaço que sobraria vazio: assim nunca empurra o
+                // resto do cartão para fora, em nenhuma largura.
+                if (avisos.isEmpty)
+                  const Spacer()
+                else
+                  Expanded(
+                    child: _avisoDoCard(avisos.join('. '), avisoSize),
+                  ),
 
                 // Minigráfico opcional (precisa de série diária vinda da API).
                 if (serie != null && serie.length > 1) ...[
@@ -518,6 +552,32 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
+  /// Mostra as linhas que couberem na altura que sobrou; o resto vira reticências,
+  /// e o Tooltip do aviso tem o texto inteiro.
+  Widget _avisoDoCard(String texto, double tamanho) {
+    const respiro = 4.0;
+
+    return LayoutBuilder(
+      builder: (context, area) {
+        final linha = tamanho * AvisoFeriado.alturaDaLinha;
+        final linhas = ((area.maxHeight - respiro) / linha).floor();
+        if (linhas < 1) return const SizedBox.shrink();
+
+        return Align(
+          alignment: Alignment.bottomLeft,
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: respiro),
+            child: AvisoFeriado(
+              texto: texto,
+              tamanho: tamanho,
+              maxLinhas: linhas.clamp(1, 3),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   /// Verde quando a variação é positiva, vermelho quando é negativa.
   Color _corVariacao(double v) {
     if (v == 0) return AppColors.textMuted;
@@ -530,6 +590,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   String _diaMes(DateTime d) =>
       '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}';
+
+  /// null quando não há feriado, para o cartão não reservar espaço à toa.
+  String? _avisoFeriados(String sujeito, List<Feriado> feriados) =>
+      feriados.isEmpty ? null : '$sujeito ${incluiFeriados(feriados)}';
 
   String _rotuloComparacao(ComparacaoIndicadores? c) {
     if (c == null) return '';

@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
+import '../../core/utils/feriados.dart';
 import '../../core/utils/formatters.dart';
 import '../../core/utils/periodo.dart';
 import '../../models/cumprimento.dart';
@@ -85,6 +86,14 @@ Future<Uint8List> gerarRelatorioPdf({
     // Só faz sentido junto da tabela que tem a coluna "Km produtivo".
     if (secoes.contains(SecaoRelatorio.operacaoPorLinha)) avisoKmPorLinha,
     ..._notasDoPeriodo(periodo, ultimaData),
+    ..._notasDeFeriados(
+      periodo,
+      // A comparação só aparece na seção de indicadores: sem ela, a nota ficaria
+      // explicando um número que não está no relatório.
+      secoes.contains(SecaoRelatorio.indicadores)
+          ? dados.indicadores.comparacao
+          : null,
+    ),
   ];
 
   pdf.addPage(
@@ -143,6 +152,29 @@ List<String> _notasDoPeriodo(PeriodoConsulta periodo, DateTime ultimaData) {
     ))
       'Não há dados financeiros de 03, 04, 05, 11 e 12/07/2026.',
     if (periodo.fim.isAfter(hoje)) 'Os dados vão até ${_data(hoje)}.',
+  ];
+}
+
+List<String> _notasDeFeriados(
+  PeriodoConsulta periodo,
+  ComparacaoIndicadores? comparacao,
+) {
+  final noPeriodo = feriadosNoPeriodo(periodo.inicio, periodo.fim);
+
+  // Sem nenhuma variação, a tabela mostra só o traço: não há o que explicar.
+  final temVariacao =
+      comparacao?.variacaoPercentual.values.any((v) => v != null) ?? false;
+  final naComparacao = temVariacao
+      ? feriadosNoPeriodo(comparacao!.dataInicio, comparacao.dataFim)
+      : const <Feriado>[];
+
+  return [
+    if (noPeriodo.isNotEmpty)
+      'O período inclui feriado(s): ${formatarFeriados(noPeriodo)}. '
+          'A operação nesses dias costuma ser menor.',
+    if (naComparacao.isNotEmpty)
+      'O período de comparação inclui feriado(s): '
+          '${formatarFeriados(naComparacao)}.',
   ];
 }
 

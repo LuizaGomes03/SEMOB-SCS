@@ -7,6 +7,7 @@ import 'package:intl/intl.dart' show NumberFormat;
 
 import '../../core/constants/app_colors.dart';
 import '../../core/utils/dia.dart';
+import '../../core/utils/feriados.dart';
 import '../../core/utils/formatters.dart';
 import '../../core/utils/periodo.dart';
 import '../../models/cumprimento.dart';
@@ -234,6 +235,8 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
               : (km ? h.quilometragem : h.viagens).toDouble(),
       ],
       rotulos: [for (final h in dados.horas) '${h.hora}h'],
+      // Uma hora não é feriado: quem avisa, neste caso, é o texto do período.
+      feriados: List<String?>.filled(dados.horas.length, null),
       kmImprodutivo: km ? dados.kmImprodutivoSemHora : 0,
     );
   }
@@ -262,6 +265,7 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
         for (final d in dias) _metrica(type, porDia[formatarDia(d)])?.toDouble(),
       ],
       rotulos: [for (final d in dias) _formatDate(d)],
+      feriados: [for (final d in dias) feriado(d)],
       kmImprodutivo: 0,
     );
   }
@@ -375,6 +379,17 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
     );
   }
 
+  /// _periodo, e não widget.periodo: os filtros desta tela mudam só o _periodo.
+  String _textoDoPeriodo() {
+    final periodo =
+        'Período: ${rotuloPeriodo(_periodo.inicio, _periodo.fim)}';
+    final feriados = feriadosNoPeriodo(_periodo.inicio, _periodo.fim);
+
+    return feriados.isEmpty
+        ? periodo
+        : '$periodo · ${incluiFeriados(feriados)}';
+  }
+
   Widget _buildTitle(_InvestigationConfig config) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -420,7 +435,7 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                'Período: ${rotuloPeriodo(_periodo.inicio, _periodo.fim)}',
+                _textoDoPeriodo(),
                 style: const TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w700,
@@ -845,10 +860,12 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
                 type: chartType,
                 values: dados.valores,
                 labels: dados.rotulos,
+                feriados: dados.feriados,
                 color: AppColors.primary,
                 secondaryColor: const Color(0xFF7FA2D4),
               ),
             ),
+            ..._legendaFeriados(dados),
             if (dados.kmImprodutivo > 0) ...[
               const SizedBox(height: 8),
               Text(
@@ -864,6 +881,46 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
         );
       },
     );
+  }
+
+  /// O nome fica escrito aqui porque nem todo mundo consegue ver o tooltip: no
+  /// celular não existe passar o mouse.
+  List<Widget> _legendaFeriados(_SerieGrafico dados) {
+    final marcados = [
+      for (var i = 0; i < dados.valores.length; i++)
+        // Dia sem dado não tem ponto: não dá para dizer que ele está marcado.
+        if (_temMarcaDeFeriado(dados.feriados, dados.valores, i))
+          '${dados.rotulos[i]} (${dados.feriados[i]})',
+    ];
+    if (marcados.isEmpty) return const [];
+
+    return [
+      const SizedBox(height: 10),
+      Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 10,
+            height: 10,
+            margin: const EdgeInsets.only(top: 2),
+            decoration: const BoxDecoration(
+              color: AppColors.warning,
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              'Feriado: ${marcados.join(', ')}',
+              style: const TextStyle(
+                fontSize: 12,
+                color: AppColors.textSecondary,
+              ),
+            ),
+          ),
+        ],
+      ),
+    ];
   }
 
   Widget _chartTypeMenu(
@@ -2396,12 +2453,16 @@ class _SerieGrafico {
   final List<double?> valores;
   final List<String> rotulos;
 
+  /// Nome do feriado de cada ponto, na mesma ordem de [valores]; null: não é.
+  final List<String?> feriados;
+
   /// Só a quilometragem por hora usa; nos outros casos fica 0.
   final num kmImprodutivo;
 
   const _SerieGrafico({
     required this.valores,
     required this.rotulos,
+    required this.feriados,
     required this.kmImprodutivo,
   });
 }
@@ -2418,6 +2479,9 @@ bool _mostrarRotulo(int i, int total) {
   if (i == 0 || i == total - 1) return true;
   return i % passo == 0 && total - 1 - i >= passo;
 }
+
+bool _temMarcaDeFeriado(List<String?> feriados, List<double?> valores, int i) =>
+    feriados[i] != null && valores[i] != null;
 
 class _ChartMessage extends StatelessWidget {
   final String mensagem;
@@ -2449,6 +2513,7 @@ class _Chart extends StatelessWidget {
   final _ChartType type;
   final List<double?> values;
   final List<String> labels;
+  final List<String?> feriados;
   final Color color;
   final Color secondaryColor;
 
@@ -2456,6 +2521,7 @@ class _Chart extends StatelessWidget {
     required this.type,
     required this.values,
     required this.labels,
+    required this.feriados,
     required this.color,
     required this.secondaryColor,
   });
@@ -2467,14 +2533,25 @@ class _Chart extends StatelessWidget {
       return const _ChartMessage('Sem dados neste período');
     }
 
+    final linha = _LineChart(
+      values: values,
+      labels: labels,
+      feriados: feriados,
+      color: color,
+    );
+
     switch (type) {
       case _ChartType.barras:
-        return _BarChart(values: values, labels: labels, color: color);
+        return _BarChart(
+          values: values,
+          labels: labels,
+          feriados: feriados,
+          color: color,
+        );
       case _ChartType.linha:
-        return _LineChart(values: values, labels: labels, color: color);
       case _ChartType.pizza:
       case _ChartType.automatico:
-        return _LineChart(values: values, labels: labels, color: color);
+        return linha;
     }
   }
 }
@@ -2482,23 +2559,60 @@ class _Chart extends StatelessWidget {
 class _LineChart extends StatelessWidget {
   final List<double?> values;
   final List<String> labels;
+  final List<String?> feriados;
   final Color color;
 
   const _LineChart({
     required this.values,
     required this.labels,
+    required this.feriados,
     required this.color,
   });
 
   @override
   Widget build(BuildContext context) {
-    return CustomPaint(
-      painter: _LineChartPainter(
-        values: values,
-        labels: labels,
-        color: color,
-      ),
-      child: const SizedBox.expand(),
+    return LayoutBuilder(
+      builder: (context, area) {
+        final largura = math.max(
+          0.0,
+          area.maxWidth -
+              _LineChartPainter.margemEsquerda -
+              _LineChartPainter.margemDireita,
+        );
+        final passo = largura / math.max(1, values.length - 1);
+        // O ponto é pequeno demais para acertar com o dedo: a área do tooltip é a
+        // coluna inteira daquele dia.
+        final larguraDica = math.max(passo, 20.0);
+
+        return Stack(
+          children: [
+            CustomPaint(
+              painter: _LineChartPainter(
+                values: values,
+                labels: labels,
+                feriados: feriados,
+                color: color,
+              ),
+              child: const SizedBox.expand(),
+            ),
+            for (var i = 0; i < values.length; i++)
+              if (_temMarcaDeFeriado(feriados, values, i))
+                Positioned(
+                  left: _LineChartPainter.margemEsquerda +
+                      passo * i -
+                      larguraDica / 2,
+                  top: 0,
+                  bottom: 0,
+                  width: larguraDica,
+                  child: Tooltip(
+                    message: '${labels[i]}: ${feriados[i]}',
+                    triggerMode: TooltipTriggerMode.tap,
+                    child: const SizedBox.expand(),
+                  ),
+                ),
+          ],
+        );
+      },
     );
   }
 }
@@ -2506,11 +2620,13 @@ class _LineChart extends StatelessWidget {
 class _BarChart extends StatelessWidget {
   final List<double?> values;
   final List<String> labels;
+  final List<String?> feriados;
   final Color color;
 
   const _BarChart({
     required this.values,
     required this.labels,
+    required this.feriados,
     required this.color,
   });
 
@@ -2533,46 +2649,75 @@ class _BarChart extends StatelessWidget {
               // maxValue 0 (tudo zero): barra de altura 0, sem dividir por zero.
               final height =
                   value == null || maxValue <= 0 ? 0.0 : 205 * (value / maxValue);
-
-              return Expanded(
-                child: Padding(
-                  padding: EdgeInsets.symmetric(horizontal: gap),
-                  child: Column(
-                    children: [
-                      _rotulo(
-                        mostrar && value != null
-                            ? value.toStringAsFixed(0)
-                            : '',
-                        AppColors.textSecondary,
-                      ),
-                      const SizedBox(height: 5),
-                      Expanded(
-                        child: Align(
-                          alignment: Alignment.bottomCenter,
-                          // Buraco: nenhuma barra, nem de altura zero.
-                          child: value == null
-                              ? null
-                              : Container(
-                                  height: height,
-                                  decoration: BoxDecoration(
-                                    color: color,
-                                    borderRadius: const BorderRadius.vertical(
-                                      top: Radius.circular(6),
-                                    ),
-                                  ),
-                                ),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      _rotulo(mostrar ? labels[i] : '', AppColors.textMuted),
-                    ],
+              final marcada = _temMarcaDeFeriado(feriados, values, i);
+              final barra = Container(
+                height: height,
+                decoration: BoxDecoration(
+                  color: marcada ? AppColors.warning : color,
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(6),
                   ),
                 ),
+              );
+
+              final coluna = Padding(
+                padding: EdgeInsets.symmetric(horizontal: gap),
+                child: Column(
+                  children: [
+                    _rotulo(
+                      mostrar && value != null
+                          ? value.toStringAsFixed(0)
+                          : '',
+                      AppColors.textSecondary,
+                    ),
+                    const SizedBox(height: 5),
+                    Expanded(
+                      child: Align(
+                        alignment: Alignment.bottomCenter,
+                        // Buraco: nenhuma barra, nem de altura zero.
+                        child: value == null
+                            ? null
+                            : marcada
+                                ? Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [_marcaFeriado(), barra],
+                                  )
+                                : barra,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    _rotulo(mostrar ? labels[i] : '', AppColors.textMuted),
+                  ],
+                ),
+              );
+
+              return Expanded(
+                child: marcada
+                    ? Tooltip(
+                        message: '${labels[i]}: ${feriados[i]}',
+                        triggerMode: TooltipTriggerMode.tap,
+                        child: coluna,
+                      )
+                    : coluna,
               );
             }),
           ),
         ),
       ],
+    );
+  }
+
+  /// Fica acima da barra, sem tirar altura dela: a escala continua a mesma. Além
+  /// da cor, a forma também avisa, para quem não distingue bem as cores.
+  Widget _marcaFeriado() {
+    return Container(
+      width: 6,
+      height: 6,
+      margin: const EdgeInsets.only(bottom: 2),
+      decoration: const BoxDecoration(
+        color: AppColors.warning,
+        shape: BoxShape.circle,
+      ),
     );
   }
 
@@ -2596,20 +2741,26 @@ class _BarChart extends StatelessWidget {
 }
 
 class _LineChartPainter extends CustomPainter {
+  // Públicas porque os tooltips precisam achar o x de cada ponto do mesmo jeito.
+  static const margemEsquerda = 42.0;
+  static const margemDireita = 12.0;
+
   final List<double?> values;
   final List<String> labels;
+  final List<String?> feriados;
   final Color color;
 
   _LineChartPainter({
     required this.values,
     required this.labels,
+    required this.feriados,
     required this.color,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
-    const left = 42.0;
-    const right = 12.0;
+    const left = margemEsquerda;
+    const right = margemDireita;
     const top = 18.0;
     const bottom = 34.0;
 
@@ -2644,6 +2795,7 @@ class _LineChartPainter extends CustomPainter {
     final path = Path();
     // false logo depois de um buraco: o próximo ponto recomeça a linha (moveTo).
     var tracando = false;
+    final marcasDeFeriado = <Offset>[];
 
     for (int i = 0; i < values.length; i++) {
       final x = chart.left +
@@ -2685,6 +2837,8 @@ class _LineChartPainter extends CustomPainter {
 
       final pointPaint = Paint()..color = color;
       canvas.drawCircle(Offset(x, y), 4.5, pointPaint);
+
+      if (feriados[i] != null) marcasDeFeriado.add(Offset(x, y));
     }
 
     final linePaint = Paint()
@@ -2694,6 +2848,21 @@ class _LineChartPainter extends CustomPainter {
       ..strokeCap = StrokeCap.round;
 
     canvas.drawPath(path, linePaint);
+
+    // Depois da linha, senão ela passaria por cima da marca. Usa o mesmo x e y do
+    // ponto: a marca não muda a escala nem o valor.
+    for (final marca in marcasDeFeriado) {
+      canvas.drawCircle(marca, 7, Paint()..color = Colors.white);
+      canvas.drawCircle(
+        marca,
+        7,
+        Paint()
+          ..color = AppColors.warning
+          ..strokeWidth = 3
+          ..style = PaintingStyle.stroke,
+      );
+      canvas.drawCircle(marca, 3, Paint()..color = AppColors.warning);
+    }
 
     final yLabels = [
       maxValue,
@@ -2727,7 +2896,8 @@ class _LineChartPainter extends CustomPainter {
   bool shouldRepaint(covariant _LineChartPainter oldDelegate) {
     return oldDelegate.values != values ||
         oldDelegate.color != color ||
-        oldDelegate.labels != labels;
+        oldDelegate.labels != labels ||
+        oldDelegate.feriados != feriados;
   }
 }
 
