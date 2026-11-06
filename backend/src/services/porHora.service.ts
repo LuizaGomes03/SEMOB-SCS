@@ -5,10 +5,12 @@ import {
   ViagemNaoIniciada,
   ViagemNaoTerminada,
 } from "../models/ViagemNaoCumprida";
+import { filtroPeriodo, TipoDia } from "../utils/dias";
 
 interface Periodo {
   dataInicio: Date;
   dataFim: Date;
+  dias?: TipoDia;
 }
 
 const modelPorTipoFalha = {
@@ -57,8 +59,8 @@ export function montarHoras(feitas: FeitasPorHora[], falhas: FalhasPorHora[]) {
   return horas;
 }
 
-export async function getPorHora({ dataInicio, dataFim, linha }: Periodo & { linha?: string }) {
-  const filtro: Record<string, unknown> = { data: { $gte: dataInicio, $lte: dataFim } };
+export async function getPorHora({ dataInicio, dataFim, linha, dias }: Periodo & { linha?: string }) {
+  const filtro: Record<string, unknown> = filtroPeriodo(dataInicio, dataFim, dias);
   if (linha) filtro.linha = linha;
 
   const normais = { ...filtro, atividade: VIAGEM_NORMAL };
@@ -120,9 +122,9 @@ export function turno(programadas: number, realizadas: number) {
   };
 }
 
-export async function getCumprimento({ dataInicio, dataFim }: Periodo) {
+export async function getCumprimento({ dataInicio, dataFim, dias }: Periodo) {
   const [soma] = await FatorCumprimentoViagem.aggregate([
-    { $match: { data: { $gte: dataInicio, $lte: dataFim } } },
+    { $match: filtroPeriodo(dataInicio, dataFim, dias) },
     {
       $group: {
         _id: null,

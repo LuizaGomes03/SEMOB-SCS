@@ -3,6 +3,9 @@ import * as operacaoController from "../controllers/operacao.controller";
 
 const router = Router();
 
+// Todas as rotas de período, menos /saldo, aceitam ?dias=util|sexta|sabado|domingo_feriado
+// para mostrar só um tipo de dia (regras em utils/dias.ts). Sem ele, o período inteiro.
+
 // GET /api/operacao/indicadores?dataInicio=2026-09-01&dataFim=2026-09-30&comparacao=anterior|semana_anterior|mes_anterior
 router.get("/indicadores", operacaoController.indicadores);
 

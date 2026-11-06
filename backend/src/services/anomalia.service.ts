@@ -3,6 +3,7 @@ import {
   ViagemNaoIniciada,
   ViagemNaoTerminada,
 } from "../models/ViagemNaoCumprida";
+import { filtroPeriodo, TipoDia } from "../utils/dias";
 
 const modelPorTipo = {
   nao_realizada: ViagemNaoRealizada,
@@ -21,6 +22,7 @@ interface ListarAnomaliasParams {
   linha?: string;
   pagina: number;
   limite: number;
+  dias?: TipoDia;
 }
 
 export async function listarAnomalias({
@@ -30,8 +32,9 @@ export async function listarAnomalias({
   linha,
   pagina,
   limite,
+  dias,
 }: ListarAnomaliasParams) {
-  const filtro: Record<string, unknown> = { data: { $gte: dataInicio, $lte: dataFim } };
+  const filtro: Record<string, unknown> = filtroPeriodo(dataInicio, dataFim, dias);
   if (linha) filtro.linha = linha;
 
   // O que cada coleção faz antes de se juntar às outras: filtra e ganha o campo "tipo",

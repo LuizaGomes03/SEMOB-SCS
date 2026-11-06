@@ -8,17 +8,20 @@ import {
   ViagemNaoIniciada,
   ViagemNaoTerminada,
 } from "../models/ViagemNaoCumprida";
+import { filtroPeriodo, TipoDia } from "../utils/dias";
 
 interface Periodo {
   dataInicio: Date;
   dataFim: Date;
+  // Filtro opcional de tipo de dia. O saldo não usa: ver getSaldo.
+  dias?: TipoDia;
 }
 
 // Arredonda para 2 casas: somar valores em reais em ponto flutuante acumula erro.
 const arredondarReais = (valor: number) => Math.round(valor * 100) / 100;
 
-export async function getIndicadores({ dataInicio, dataFim }: Periodo) {
-  const periodo = { data: { $gte: dataInicio, $lte: dataFim } };
+export async function getIndicadores({ dataInicio, dataFim, dias }: Periodo) {
+  const periodo = filtroPeriodo(dataInicio, dataFim, dias);
 
   // As três consultas são independentes, então rodam ao mesmo tempo.
   const [[operacao], [passageiros], [financeiro]] = await Promise.all([
@@ -85,11 +88,12 @@ export async function getRelatorioPorPeriodo({
   dataFim,
   agrupamento,
   linha,
+  dias,
 }: Periodo & { agrupamento: Agrupamento; linha?: string }) {
-  if (linha) return getRelatorioDaLinha({ dataInicio, dataFim, agrupamento, linha });
+  if (linha) return getRelatorioDaLinha({ dataInicio, dataFim, agrupamento, linha, dias });
 
   const formato = formatoPorAgrupamento[agrupamento] || formatoPorAgrupamento.diario;
-  const periodo = { data: { $gte: dataInicio, $lte: dataFim } };
+  const periodo = filtroPeriodo(dataInicio, dataFim, dias);
   // A mesma chave nas três consultas: é ela que permite juntar os resultados depois.
   const chave = { $dateToString: { format: formato, date: "$data" } };
 
@@ -181,8 +185,9 @@ export async function listarPorLinha({
   ordem,
   pagina,
   limite,
+  dias,
 }: ListarPorLinhaParams) {
-  const filtro: Record<string, unknown> = { data: { $gte: dataInicio, $lte: dataFim } };
+  const filtro: Record<string, unknown> = filtroPeriodo(dataInicio, dataFim, dias);
 
   if (busca) {
     const texto = busca.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -273,8 +278,8 @@ export function montarPorLinha(
   };
 }
 
-export async function getPorLinha({ dataInicio, dataFim }: Periodo) {
-  const periodo = { data: { $gte: dataInicio, $lte: dataFim } };
+export async function getPorLinha({ dataInicio, dataFim, dias }: Periodo) {
+  const periodo = filtroPeriodo(dataInicio, dataFim, dias);
 
   // Sem filtro de data de propósito: a lista de linhas não muda conforme o período.
   const [linhasResumo, linhasRealizada, linhasIniciada, linhasTerminada, somas, naoCumpridas] =
@@ -351,9 +356,10 @@ async function getRelatorioDaLinha({
   dataFim,
   agrupamento,
   linha,
+  dias,
 }: Periodo & { agrupamento: Agrupamento; linha: string }) {
   const formato = formatoPorAgrupamento[agrupamento] || formatoPorAgrupamento.diario;
-  const filtro = { data: { $gte: dataInicio, $lte: dataFim }, linha };
+  const filtro = { ...filtroPeriodo(dataInicio, dataFim, dias), linha };
   const chave = { $dateToString: { format: formato, date: "$data" } };
 
   const [operacao, naoCumpridas] = await Promise.all([
@@ -377,11 +383,13 @@ async function getRelatorioDaLinha({
   return montarRelatorioDaLinha(operacao, naoCumpridas);
 }
 
+// Sem filtro de dias, de propósito: o saldo é uma foto do fim do dia e não se soma.
+// Tirar os domingos não muda o saldo de segunda, que já carrega tudo o que veio antes.
 export async function getSaldo({
   dataInicio,
   dataFim,
   agrupamento,
-}: Periodo & { agrupamento: Agrupamento }) {
+}: Omit<Periodo, "dias"> & { agrupamento: Agrupamento }) {
   const formato = formatoPorAgrupamento[agrupamento] || formatoPorAgrupamento.diario;
 
   const [periodos, anterior, ultimo] = await Promise.all([
@@ -501,10 +509,14 @@ export async function getIndicadoresComComparacao({
   dataFim,
   anterior,
   tipo,
-}: Periodo & { anterior: Periodo; tipo: string }) {
+  dias,
+}: Periodo & { anterior: Omit<Periodo, "dias">; tipo: string }) {
+  // O período de comparação usa o mesmo filtro de dias: dia útil compara com dia útil.
+  // A quantidade de dias pode ser diferente (um lado tem feriado, o outro não), mas a
+  // variação compara a média por dia com dado, então isso não distorce o resultado.
   const [indicadoresAtual, indicadoresAnterior] = await Promise.all([
-    getIndicadores({ dataInicio, dataFim }),
-    getIndicadores(anterior),
+    getIndicadores({ dataInicio, dataFim, dias }),
+    getIndicadores({ ...anterior, dias }),
   ]);
 
   return {
