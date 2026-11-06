@@ -5,6 +5,7 @@ import Passageiros from "../src/models/Passageiros";
 import VendaUtilizacao from "../src/models/VendaUtilizacao";
 import { getIndicadores, getIndicadoresComComparacao } from "../src/services/operacao.service";
 import { periodoAnterior } from "../src/utils/datas";
+import { filtroPeriodo } from "../src/utils/dias";
 
 // Os testes não usam o MongoDB: o aggregate de cada modelo é substituído por uma
 // resposta fixa, e o que se verifica é o cálculo feito pelo serviço.
@@ -79,5 +80,20 @@ describe("Cenário: Comparação com o mês anterior", () => {
     assert.equal(r.comparacao.dataInicio, "2026-08-01");
     assert.equal(r.comparacao.dataFim, "2026-08-31");
     assert.equal(r.viagens, 10);
+  });
+});
+
+describe("Cenário: Comparação filtrada por tipo de dia", () => {
+  it("o período comparado usa o mesmo filtro de dias do período pedido", async () => {
+    simular([], [], []);
+    const anterior = periodoAnterior(setembro.dataInicio, setembro.dataFim, "mes_anterior");
+
+    await getIndicadoresComComparacao({ ...setembro, anterior, tipo: "mes_anterior", dias: "util" });
+
+    const filtros = (ResumoGeral.aggregate as any).mock.calls.map((c: any) => c.arguments[0][0].$match);
+    assert.deepEqual(filtros, [
+      filtroPeriodo(setembro.dataInicio, setembro.dataFim, "util"),
+      filtroPeriodo(anterior.dataInicio, anterior.dataFim, "util"),
+    ]);
   });
 });
