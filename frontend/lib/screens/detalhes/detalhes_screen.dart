@@ -71,7 +71,10 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
   // aqui dentro, sem alterar o dashboard.
   late PeriodoConsulta _periodo;
   late String _periodFilter;
-  String _dayFilter = 'Todos';
+
+  /// Filtro de tipo de dia. null: todos os dias. Um só pode estar ativo, e um
+  /// valor só (em vez de quatro bools) já garante isso pelo tipo.
+  TipoDia? _tipoDia;
   String _lineFilter = 'Todas as linhas';
   DateTimeRange? _customRange;
   _ChartType _chartType = _ChartType.automatico;
@@ -116,6 +119,8 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
   void _usarPeriodoDoDashboard() {
     _periodo = widget.periodo;
     _customRange = widget.customRange;
+    // Período novo vindo do dashboard: a tela recomeça com todos os dias.
+    _tipoDia = null;
     _periodFilter = switch (widget.botaoInicial) {
       'semana' => 'Semanal',
       'mes' || 'mês' => 'Mensal',
@@ -135,12 +140,34 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
       _periodFilter = filtro;
       if (novo != _periodo) {
         _periodo = novo;
+        // O filtro de dia continua quando o período muda aqui dentro, menos num
+        // período de um dia: lá ele não vale (os botões ficam desabilitados).
+        if (_diaUnico) _tipoDia = null;
         _buscar();
         _buscarSerie();
         _buscarPorLinha();
       }
     });
   }
+
+  bool get _diaUnico => _periodo.inicio == _periodo.fim;
+
+  /// O valor de ?dias= para a API, ou null para todos os dias.
+  String? get _dias => _tipoDia?.valorApi;
+
+  /// Dias do CALENDÁRIO do período que entram no filtro (não depende da API).
+  /// null sem filtro. Recalcula a cada build: são no máximo algumas centenas de
+  /// dias, barato demais para valer a pena guardar e invalidar um cache.
+  int? get _diasNoFiltro {
+    final tipo = _tipoDia;
+    if (tipo == null) return null;
+    return contarDiasDoTipo(_periodo.inicio, _periodo.fim, tipo);
+  }
+
+  /// Filtro ativo e nenhum dia do período bate: as buscas nem são feitas, e a
+  /// tela mostra uma mensagem em vez de números zerados (zero viagens num
+  /// período sem sábados não é "zero viagens", é "pergunta sem sentido").
+  bool get _semDiasNoFiltro => _diasNoFiltro == 0;
 
   /// Passageiros, gratuidades e financeiro não vêm por linha.
   bool get _temPorLinha =>
@@ -158,6 +185,13 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
   // setState não aceita função async, por isso a espera fica em outro método.
   void _buscarPorLinha() {
     if (!_temPorLinha) return;
+    if (_semDiasNoFiltro) {
+      // Invalida uma busca que ainda esteja a caminho: a resposta dela, que é
+      // de outro filtro, será ignorada ao chegar.
+      _buscaPorLinha++;
+      _carregandoPorLinha = false;
+      return;
+    }
     _carregandoPorLinha = true;
     _erroPorLinha = null;
     _aguardarPorLinha(++_buscaPorLinha);
@@ -168,6 +202,7 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
       final resposta = await widget.api.porLinha(
         dataInicio: _periodo.inicio,
         dataFim: _periodo.fim,
+        dias: _dias,
       );
       if (!mounted || busca != _buscaPorLinha) return;
 
@@ -185,29 +220,44 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
     }
   }
 
-  // Mesma chamada do dashboard: o número grande daqui bate com o do cartão.
+  // Mesma chamada do dashboard: sem filtro de dia, o número grande daqui bate
+  // com o do cartão.
   void _buscar() {
+    // _indicadores já tem um valor (o initState busca sem filtro): pular aqui
+    // só deixa o Future antigo, que não é mostrado enquanto não há dias.
+    if (_semDiasNoFiltro) return;
     _indicadores = widget.api.indicadores(
       dataInicio: _periodo.inicio,
       dataFim: _periodo.fim,
       comparacao: _periodo.comparacao,
+      dias: _dias,
     );
   }
 
   InvestigationType get _type => widget.type ?? InvestigationType.quilometragem;
 
   void _buscarSerie() {
+    if (_semDiasNoFiltro) return;
     final inicio = _periodo.inicio;
     final fim = _periodo.fim;
     final type = _type;
     final linha = _linhaEscolhida;
+    final dias = _dias;
+    // Lido agora, e não dentro do then: se o filtro mudar antes da resposta
+    // chegar, esta série continua montada com o filtro com que foi pedida.
+    final tipoDia = _tipoDia;
 
     if (inicio == fim) {
       final temPorHora = type == InvestigationType.quilometragem ||
           type == InvestigationType.viagens;
       _serie = temPorHora
           ? widget.api
-              .porHora(dataInicio: inicio, dataFim: fim, linha: linha)
+              .porHora(
+                dataInicio: inicio,
+                dataFim: fim,
+                linha: linha,
+                dias: dias,
+              )
               .then((dados) => _seriePorHora(type, dados))
           : null;
     } else {
@@ -217,8 +267,9 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
             dataFim: fim,
             agrupamento: 'diario',
             linha: linha,
+            dias: dias,
           )
-          .then((itens) => _seriePorDia(type, inicio, fim, itens));
+          .then((itens) => _seriePorDia(type, inicio, fim, tipoDia, itens));
     }
   }
 
@@ -245,20 +296,27 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
     InvestigationType type,
     DateTime inicio,
     DateTime fim,
+    TipoDia? tipoDia,
     List<RelatorioItem> itens,
   ) {
     // Indexa pela data: dia que não veio no relatório (sem operação) vira buraco
     // no lugar certo, em vez de puxar os dias seguintes uma posição para trás.
     final porDia = {for (final item in itens) formatarDia(item.inicio): item};
 
+    // Com filtro, o eixo X só tem os dias do calendário que entram nele, um ao
+    // lado do outro: um sábado fora de "dia útil" não é falta de dado, então não
+    // vira buraco. Já um dia que entra no filtro e não veio no relatório
+    // continua buraco (null), como sem filtro.
     // DateTime(ano, mês, dia + 1) em vez de add(Duration(days: 1)): o construtor
     // sempre cai na meia-noite do dia seguinte, mesmo com horário de verão.
-    final dias = [
-      for (var d = inicio;
-          !d.isAfter(fim);
-          d = DateTime(d.year, d.month, d.day + 1))
-        d,
-    ];
+    final dias = tipoDia != null
+        ? diasDoTipo(inicio, fim, tipoDia)
+        : [
+            for (var d = inicio;
+                !d.isAfter(fim);
+                d = DateTime(d.year, d.month, d.day + 1))
+              d,
+          ];
 
     return _SerieGrafico(
       valores: [
@@ -307,26 +365,32 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
               const SizedBox(height: 24),
               _buildTitle(config),
               const SizedBox(height: 24),
-              // Voltar e título ficam fora do FutureBuilder: carregando ou com
-              // erro, o usuário sempre consegue voltar ao dashboard.
-              FutureBuilder<Indicadores>(
-                future: _indicadores,
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState != ConnectionState.done) {
-                    return const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 60),
-                      child: Center(child: CircularProgressIndicator()),
-                    );
-                  }
-                  if (snapshot.hasError) {
-                    return ErroCarregamento(
-                      mensagem: snapshot.error.toString(),
-                      onTentarNovamente: () => setState(_buscar),
-                    );
-                  }
-                  return _buildConteudo(config, type, snapshot.data!);
-                },
-              ),
+              // Voltar, título e filtros ficam fora do FutureBuilder: carregando
+              // ou com erro, o usuário sempre consegue voltar ou trocar o filtro
+              // (por exemplo, desligar um filtro que deixou o período vazio).
+              _buildFilters(),
+              const SizedBox(height: 20),
+              if (_semDiasNoFiltro)
+                _buildSemDiasNoFiltro()
+              else
+                FutureBuilder<Indicadores>(
+                  future: _indicadores,
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState != ConnectionState.done) {
+                      return const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 60),
+                        child: Center(child: CircularProgressIndicator()),
+                      );
+                    }
+                    if (snapshot.hasError) {
+                      return ErroCarregamento(
+                        mensagem: snapshot.error.toString(),
+                        onTentarNovamente: () => setState(_buscar),
+                      );
+                    }
+                    return _buildConteudo(config, type, snapshot.data!);
+                  },
+                ),
             ],
           ),
         );
@@ -342,8 +406,6 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildFilters(),
-        const SizedBox(height: 20),
         _buildMainKpi(config, type, dados),
         const SizedBox(height: 20),
         _buildChartSection(config, type),
@@ -352,19 +414,22 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
           // 'falhas' na key: esta seção e a de baixo ficam na mesma Column, e
           // duas irmãs não podem ter keys iguais.
           _FalhasPorHorarioSection(
-            key: ValueKey(('falhas', _periodo, _linhaEscolhida)),
+            key: ValueKey(('falhas', _periodo, _linhaEscolhida, _dias)),
             api: widget.api,
             periodo: _periodo,
             linha: _linhaEscolhida,
+            dias: _dias,
           ),
           const SizedBox(height: 20),
-          // A key faz o Flutter criar a seção do zero quando o período ou a
-          // linha mudam: ela volta para "Todas", página 1, sem limpar nada à mão.
+          // A key faz o Flutter criar a seção do zero quando o período, a linha
+          // ou o filtro de dia mudam: ela volta para "Todas", página 1, sem
+          // limpar nada à mão.
           _ViagensNaoCumpridasSection(
-            key: ValueKey((_periodo, _linhaEscolhida)),
+            key: ValueKey((_periodo, _linhaEscolhida, _dias)),
             api: widget.api,
             periodo: _periodo,
             linha: _linhaEscolhida,
+            dias: _dias,
           ),
           const SizedBox(height: 20),
         ],
@@ -381,13 +446,75 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
 
   /// _periodo, e não widget.periodo: os filtros desta tela mudam só o _periodo.
   String _textoDoPeriodo() {
-    final periodo =
-        'Período: ${rotuloPeriodo(_periodo.inicio, _periodo.fim)}';
+    final tipo = _tipoDia;
+    final dias = _diasNoFiltro;
     final feriados = feriadosNoPeriodo(_periodo.inicio, _periodo.fim);
 
-    return feriados.isEmpty
-        ? periodo
-        : '$periodo · ${incluiFeriados(feriados)}';
+    return [
+      'Período: ${rotuloPeriodo(_periodo.inicio, _periodo.fim)}',
+      if (tipo != null && dias != null)
+        '${_rotuloFiltroDia(tipo)} ($dias ${dias == 1 ? 'dia' : 'dias'})',
+      if (feriados.isNotEmpty) incluiFeriados(feriados),
+    ].join(' · ');
+  }
+
+  // Os textos ficam na tela, e não no enum TipoDia: o enum é regra de negócio
+  // (core/utils), e as palavras são decisão de interface desta tela.
+  static String _rotuloBotaoDia(TipoDia tipo) => switch (tipo) {
+        TipoDia.util => 'Dia útil',
+        TipoDia.sexta => 'Sexta-feira',
+        TipoDia.sabado => 'Sábado',
+        TipoDia.domingoFeriado => 'Domingo e feriado',
+      };
+
+  static IconData _iconeDia(TipoDia tipo) => switch (tipo) {
+        TipoDia.util => Icons.work_outline, // pasta de trabalho
+        TipoDia.sexta => Icons.event_outlined, // um dia marcado na folhinha
+        TipoDia.sabado => Icons.weekend_outlined, // sofá
+        TipoDia.domingoFeriado => Icons.celebration_outlined, // festa
+      };
+
+  static String _rotuloFiltroDia(TipoDia tipo) => switch (tipo) {
+        TipoDia.util => 'só dias úteis',
+        TipoDia.sexta => 'só sextas-feiras',
+        TipoDia.sabado => 'só sábados',
+        TipoDia.domingoFeriado => 'só domingos e feriados',
+      };
+
+  static String _nenhumDia(TipoDia tipo) => switch (tipo) {
+        TipoDia.util => 'Nenhum dia do período é dia útil.',
+        TipoDia.sexta => 'Nenhum dia do período é sexta-feira.',
+        TipoDia.sabado => 'Nenhum dia do período é sábado.',
+        TipoDia.domingoFeriado => 'Nenhum dia do período é domingo ou feriado.',
+      };
+
+  /// Fica no lugar do número principal, do gráfico e das seções.
+  Widget _buildSemDiasNoFiltro() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(17),
+        border: Border.all(color: const Color(0xFFE1E6EF), width: 1.4),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.event_busy_outlined, color: AppColors.textSecondary),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              _nenhumDia(_tipoDia!),
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                color: AppColors.textPrimary,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildTitle(_InvestigationConfig config) {
@@ -472,12 +599,7 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
               selected: _periodFilter == 'Mensal'),
           _filter('Selecionar período', Icons.calendar_today_outlined,
               selected: _periodFilter == 'Personalizado'),
-          _filter('Sexta-feira', Icons.event_available_outlined,
-              selected: _dayFilter == 'Sexta-feira'),
-          _filter('Dia útil', Icons.work_outline,
-              selected: _dayFilter == 'Dia útil'),
-          _filter('Não útil', Icons.weekend_outlined,
-              selected: _dayFilter == 'Não útil'),
+          for (final tipo in TipoDia.values) _filtroDia(tipo),
           if (_temPorLinha)
             _filter(_lineFilter, Icons.directions_bus_outlined,
                 selected: _lineFilter != 'Todas as linhas'),
@@ -486,9 +608,49 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
     );
   }
 
-  Widget _filter(String label, IconData icon, {bool selected = false}) {
+  Widget _filter(String label, IconData icon, {bool selected = false}) =>
+      _botaoFiltro(label, icon,
+          selected: selected, onPressed: () => _handleFilter(label));
+
+  Widget _filtroDia(TipoDia tipo) {
+    final botao = _botaoFiltro(
+      _rotuloBotaoDia(tipo),
+      _iconeDia(tipo),
+      selected: _tipoDia == tipo,
+      // onPressed null é o jeito do Flutter de desabilitar um botão.
+      onPressed: _diaUnico ? null : () => _alternarTipoDia(tipo),
+    );
+    if (!_diaUnico) return botao;
+
+    // O Tooltip funciona mesmo com o botão desabilitado: ele escuta o mouse
+    // por fora do botão. Assim o usuário descobre por que não pode clicar.
+    return Tooltip(
+      message: 'Filtro por tipo de dia vale para períodos de mais de um dia.',
+      child: botao,
+    );
+  }
+
+  /// Clicar no ativo desliga (volta a todos os dias); clicar em outro troca.
+  void _alternarTipoDia(TipoDia tipo) {
+    setState(() {
+      _tipoDia = _tipoDia == tipo ? null : tipo;
+      // Busca tudo de novo com o filtro novo. As duas seções de viagens não
+      // precisam de chamada aqui: a key delas inclui _dias, então o Flutter as
+      // recria e elas buscam sozinhas no initState.
+      _buscar();
+      _buscarSerie();
+      _buscarPorLinha();
+    });
+  }
+
+  Widget _botaoFiltro(
+    String label,
+    IconData icon, {
+    required bool selected,
+    required VoidCallback? onPressed,
+  }) {
     return OutlinedButton.icon(
-      onPressed: () => _handleFilter(label),
+      onPressed: onPressed,
       icon: Icon(icon, size: 17),
       label: Text(
         label,
@@ -501,6 +663,8 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
             : AppColors.textPrimary,
         backgroundColor:
             selected ? AppColors.primary : Colors.white,
+        disabledForegroundColor: AppColors.textMuted,
+        disabledBackgroundColor: const Color(0xFFF5F7FA),
         side: BorderSide(
           color: selected
               ? AppColors.primary
@@ -546,15 +710,6 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
     if (label == 'Todas as linhas' ||
         label.startsWith('Linha ')) {
       _showLinePicker();
-      return;
-    }
-
-    if (label == 'Sexta-feira' ||
-        label == 'Dia útil' ||
-        label == 'Não útil') {
-      setState(() {
-        _dayFilter = _dayFilter == label ? 'Todos' : label;
-      });
       return;
     }
 
@@ -808,7 +963,8 @@ class _DetalhesScreenState extends State<DetalhesScreen> {
           const SizedBox(height: 10),
           Text(
             'Período: ${rotuloPeriodo(_periodo.inicio, _periodo.fim)} • '
-            '${_linhaEscolhida == null ? 'todas as linhas' : _lineFilter}',
+            '${_linhaEscolhida == null ? 'todas as linhas' : _lineFilter}'
+            '${_tipoDia == null ? '' : ' • ${_rotuloFiltroDia(_tipoDia!)}'}',
             style: const TextStyle(
               fontSize: 11,
               color: AppColors.textMuted,
@@ -1372,11 +1528,15 @@ class _ViagensNaoCumpridasSection extends StatefulWidget {
   /// Código da linha ("06"), ou null para todas.
   final String? linha;
 
+  /// Filtro de tipo de dia (TipoDia.valorApi), ou null para todos.
+  final String? dias;
+
   const _ViagensNaoCumpridasSection({
     super.key,
     required this.api,
     required this.periodo,
     this.linha,
+    this.dias,
   });
 
   @override
@@ -1421,6 +1581,7 @@ class _ViagensNaoCumpridasSectionState
         dataFim: widget.periodo.fim,
         tipo: tipo,
         linha: widget.linha,
+        dias: widget.dias,
         pagina: pagina,
       );
       if (!mounted || busca != _buscaAtual) return;
@@ -1802,11 +1963,15 @@ class _FalhasPorHorarioSection extends StatefulWidget {
   /// Código da linha ("06"), ou null para todas.
   final String? linha;
 
+  /// Filtro de tipo de dia (TipoDia.valorApi), ou null para todos.
+  final String? dias;
+
   const _FalhasPorHorarioSection({
     super.key,
     required this.api,
     required this.periodo,
     this.linha,
+    this.dias,
   });
 
   @override
@@ -1843,6 +2008,7 @@ class _FalhasPorHorarioSectionState extends State<_FalhasPorHorarioSection> {
         dataInicio: widget.periodo.inicio,
         dataFim: widget.periodo.fim,
         linha: widget.linha,
+        dias: widget.dias,
       );
       if (!mounted || busca != _buscaHoras) return;
 
@@ -1867,6 +2033,7 @@ class _FalhasPorHorarioSectionState extends State<_FalhasPorHorarioSection> {
       final resposta = await widget.api.cumprimento(
         dataInicio: widget.periodo.inicio,
         dataFim: widget.periodo.fim,
+        dias: widget.dias,
       );
       if (!mounted || busca != _buscaTurnos) return;
 
