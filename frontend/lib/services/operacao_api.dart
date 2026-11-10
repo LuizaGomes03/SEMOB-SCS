@@ -83,16 +83,19 @@ class OperacaoApi {
   // "sem dias" como todos os dias, mas recusa (400) um valor vazio ou inválido.
 
   /// comparacao: 'anterior', 'semana_anterior' ou 'mes_anterior'.
+  /// Com dias, a comparação também é filtrada (regra do backend).
   Future<Indicadores> indicadores({
     required DateTime dataInicio,
     required DateTime dataFim,
     String comparacao = 'anterior',
+    String? dias,
   }) async {
     return Indicadores.fromJson(
       await _get('/operacao/indicadores', {
         'dataInicio': formatarDia(dataInicio),
         'dataFim': formatarDia(dataFim),
         'comparacao': comparacao,
+        'dias': ?dias,
       }),
     );
   }
@@ -104,12 +107,14 @@ class OperacaoApi {
     required DateTime dataFim,
     String agrupamento = 'diario',
     String? linha,
+    String? dias,
   }) async {
     final corpo = await _get('/operacao/relatorio', {
       'dataInicio': formatarDia(dataInicio),
       'dataFim': formatarDia(dataFim),
       'agrupamento': agrupamento,
       'linha': ?linha,
+      'dias': ?dias,
     }) as List<dynamic>;
 
     return corpo
@@ -122,12 +127,14 @@ class OperacaoApi {
     required DateTime dataInicio,
     required DateTime dataFim,
     String? linha,
+    String? dias,
   }) async {
     final corpo = await _get('/operacao/por-hora', {
       'dataInicio': formatarDia(dataInicio),
       'dataFim': formatarDia(dataFim),
       // "?linha": a chave só entra no mapa se linha não for null.
       'linha': ?linha,
+      'dias': ?dias,
     }) as Map<String, dynamic>;
 
     return PorHora.fromJson(corpo);
@@ -137,10 +144,12 @@ class OperacaoApi {
   Future<Cumprimento> cumprimento({
     required DateTime dataInicio,
     required DateTime dataFim,
+    String? dias,
   }) async {
     final corpo = await _get('/operacao/cumprimento', {
       'dataInicio': formatarDia(dataInicio),
       'dataFim': formatarDia(dataFim),
+      'dias': ?dias,
     }) as Map<String, dynamic>;
 
     return Cumprimento.fromJson(corpo);
@@ -150,10 +159,12 @@ class OperacaoApi {
   Future<PorLinha> porLinha({
     required DateTime dataInicio,
     required DateTime dataFim,
+    String? dias,
   }) async {
     final corpo = await _get('/operacao/por-linha', {
       'dataInicio': formatarDia(dataInicio),
       'dataFim': formatarDia(dataFim),
+      'dias': ?dias,
     }) as Map<String, dynamic>;
 
     return PorLinha.fromJson(corpo);
@@ -166,6 +177,7 @@ class OperacaoApi {
     required DateTime dataFim,
     String? tipo,
     String? linha,
+    String? dias,
     int pagina = 1,
     int limite = 20,
   }) async {
@@ -174,6 +186,7 @@ class OperacaoApi {
       'dataFim': formatarDia(dataFim),
       'tipo': ?tipo,
       'linha': ?linha,
+      'dias': ?dias,
       'pagina': pagina.toString(),
       'limite': limite.toString(),
     }) as Map<String, dynamic>;
