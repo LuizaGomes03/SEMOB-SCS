@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 
 import '../core/constants/app_colors.dart';
+import '../core/utils/feriados.dart';
 import '../core/utils/periodo.dart';
 import '../screens/dashboard/dashboard_screen.dart';
 import '../screens/detalhes/detalhes_screen.dart';
@@ -29,19 +30,34 @@ class _SemobAppState extends State<SemobApp> {
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
 
   DateTime? _ultimaData;
+
+  /// Erro da busca da última data ou dos feriados (a primeira que falhar).
   String? _erroUltimaData;
   int _versaoDados = 0;
 
   @override
   void initState() {
     super.initState();
-    _carregarUltimaData();
+    _carregarUltimaDataEFeriados();
   }
 
-  /// Devolve true se conseguiu uma data válida.
-  Future<bool> _carregarUltimaData() async {
+  /// Busca a última data e os feriados. Devolve true se conseguiu os dois e
+  /// uma data válida. Nenhuma tela aparece antes: _ultimaData só é preenchida
+  /// aqui, depois que as duas respostas chegaram.
+  Future<bool> _carregarUltimaDataEFeriados() async {
     try {
-      final resposta = await _api.ultimaData();
+      // As duas buscas começam juntas (cada chamada já dispara a requisição) e
+      // o Future.wait espera as duas: o tempo total é o da mais lenta, não a
+      // soma. Se uma falhar, o Future.wait lança o erro dela, e cai no catch.
+      final ultimaData = _api.ultimaData();
+      final feriados = _api.feriados();
+      await Future.wait([ultimaData, feriados]);
+
+      // Já terminaram: estes awaits só pegam o valor, com o tipo certo (a lista
+      // do Future.wait é List<Object>, e precisaria de cast).
+      final resposta = await ultimaData;
+      definirFeriados(await feriados);
+
       if (!mounted) return false;
       setState(() {
         _ultimaData = resposta.ultimaData;
@@ -119,7 +135,7 @@ class _SemobAppState extends State<SemobApp> {
 
     setState(() => _isRefreshing = true);
 
-    final ok = await _carregarUltimaData();
+    final ok = await _carregarUltimaDataEFeriados();
 
     if (!mounted) return;
 
@@ -378,7 +394,7 @@ class _SemobAppState extends State<SemobApp> {
         mensagem: _erroUltimaData!,
         onTentarNovamente: () {
           setState(() => _erroUltimaData = null);
-          _carregarUltimaData();
+          _carregarUltimaDataEFeriados();
         },
       );
     }

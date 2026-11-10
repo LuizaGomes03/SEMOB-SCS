@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import '../core/config/api_config.dart';
 import '../core/utils/dia.dart';
 import '../models/cumprimento.dart';
+import '../models/feriado.dart';
 import '../models/indicadores.dart';
 import '../models/por_hora.dart';
 import '../models/por_linha.dart';
@@ -67,6 +68,19 @@ class OperacaoApi {
     final corpo = await _get('/operacao/ultima-data') as Map<String, dynamic>;
     return UltimaData.fromJson(corpo);
   }
+
+  /// Fica fora de /operacao: a rota é /api/feriados.
+  Future<List<Feriado>> feriados() async {
+    final corpo = await _get('/feriados') as List<dynamic>;
+    return corpo
+        .map((item) => Feriado.fromJson(item as Map<String, dynamic>))
+        .toList();
+  }
+
+  // dias, em todas as rotas que aceitam: 'util', 'sexta', 'sabado' ou
+  // 'domingo_feriado' (TipoDia.valorApi). null: todos os dias. Vai com "?dias"
+  // no mapa para a chave nem aparecer na URL quando for null: a API trata
+  // "sem dias" como todos os dias, mas recusa (400) um valor vazio ou inválido.
 
   /// comparacao: 'anterior', 'semana_anterior' ou 'mes_anterior'.
   Future<Indicadores> indicadores({
