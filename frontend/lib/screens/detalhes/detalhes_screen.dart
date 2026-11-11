@@ -2938,13 +2938,19 @@ class _LineChartPainter extends CustomPainter {
       math.max(0, size.height - top - bottom),
     );
 
-    // Mínimo e máximo só entre os dias com dado: um buraco não é zero.
+    // O eixo vai de 0 ao máximo, e não do mínimo ao máximo: começando no
+    // mínimo, 1.270 a 1.290 viagens ocupariam o gráfico inteiro e uma variação
+    // de 1,5% pareceria um desabamento. Com o zero, a altura do ponto é
+    // proporcional ao valor, e só quedas grandes (fim de semana, feriado)
+    // aparecem grandes.
+    // Máximo só entre os dias com dado: um buraco não é zero.
     final presentes = values.whereType<double>();
     if (presentes.isEmpty) return;
     final maxValue = presentes.reduce(math.max);
-    final minValue = presentes.reduce(math.min);
-    // Pelo menos 1: com todos os valores iguais (ou todos zero) não divide por zero.
-    final range = math.max(1, maxValue - minValue);
+    // Tudo zero (ex.: período sem viagens programadas): dividir pelo máximo
+    // seria dividir por zero. Com 1, os pontos ficam na base, onde é o 0.
+    final tudoZero = maxValue <= 0;
+    final range = tudoZero ? 1.0 : maxValue;
 
     final gridPaint = Paint()
       ..color = const Color(0xFFE7EBF2)
@@ -2992,7 +2998,7 @@ class _LineChartPainter extends CustomPainter {
         continue;
       }
 
-      final normalized = (value - minValue) / range;
+      final normalized = value / range;
       final y = chart.bottom - normalized * chart.height;
 
       if (tracando) {
@@ -3031,15 +3037,19 @@ class _LineChartPainter extends CustomPainter {
       canvas.drawCircle(marca, 3, Paint()..color = AppColors.warning);
     }
 
+    // 100%, 75%, 50%, 25% e 0% do máximo, de cima para baixo.
     final yLabels = [
       maxValue,
-      minValue + range * 0.75,
-      minValue + range * 0.50,
-      minValue + range * 0.25,
-      minValue,
+      maxValue * 0.75,
+      maxValue * 0.50,
+      maxValue * 0.25,
+      0.0,
     ];
 
     for (int i = 0; i < yLabels.length; i++) {
+      // Tudo zero: as cinco marcas seriam "0", e as de cima dariam a entender
+      // que a linha da base não é o zero. Fica só a marca da base.
+      if (tudoZero && i < yLabels.length - 1) continue;
       final painter = TextPainter(
         text: TextSpan(
           text: yLabels[i].toStringAsFixed(0),
