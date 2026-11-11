@@ -53,8 +53,8 @@ const _borda = PdfColor.fromInt(0xFFE1E6EF);
 
 String _doisDigitos(int n) => n.toString().padLeft(2, '0');
 
-// Datas à mão: Formatters.date precisa de initializeDateFormatting, que o app
-// não chama.
+// Datas à mão, por enquanto. Formatters.date já funciona (o main.dart chama
+// initializeDateFormatting antes do runApp); a troca fica para outro passo.
 String _diaMes(DateTime d) => '${_doisDigitos(d.day)}/${_doisDigitos(d.month)}';
 String _data(DateTime d) => '${_diaMes(d)}/${d.year}';
 String _hora(DateTime? d) =>
